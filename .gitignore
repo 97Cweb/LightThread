@@ -1,0 +1,22 @@
+# Ignore Arduino build files
+*.elf
+*.hex
+*.bin
+*.map
+*.d
+*.o
+
+# Ignore backup files
+*.bak
+*.swp
+*.tmp
+*~
+
+# Ignore generated files and hidden folders
+__pycache__/
+.DS_Store
+Thumbs.db
+
+# Ignore VSCode or PlatformIO configs (if used)
+.vscode/
+.pio/

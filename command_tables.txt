@@ -1,0 +1,50 @@
+
+Leader Commands
+---------------
+| Order | Command                              | Purpose                                              |
+|-------|--------------------------------------|------------------------------------------------------|
+| 1     | dataset init new                     | Initialize a new dataset for the leader.            |
+| 2     | dataset channel <channel>            | Set the communication channel for the network.      |
+| 3     | dataset panid 0x1234                 | Set the PAN ID for the network.                     |
+| 4     | dataset networkname <name>           | Set the network name.                               |
+| 5     | dataset networkkey <key>             | Set the network encryption key.                     |
+| 6     | dataset commit active                | Commit the dataset to make it active.               |
+| 7     | ifconfig up                          | Enable the network interface.                       |
+| 8     | thread start                         | Start the Thread network.                           |
+| 9     | udp open                             | Open a UDP socket for communication.                |
+| 10    | udp bind <ip> <port>                 | Bind the UDP socket to the specified port.          |
+| 11    | commissioner start                   | Start the commissioner mode.                        |
+| 12    | commissioner joiner add * <key>      | Add a joiner to the network using a specific key.   |
+| 13    | commissioner stop                    | Stop the commissioner mode.                         |
+| 14    | udp send <dest_ip> <dest_port> -x <data> | Send a broadcast message to all nodes.          |
+
+
+
+Joiner Commands
+---------------
+| Order | Command                  | Purpose                                              |
+|-------|--------------------------|------------------------------------------------------|
+| 1     | dataset clear            | Clear any existing dataset.                         |
+| 2     | dataset panid 0xffff     | Set PAN ID to scan all available networks.          |
+| 3     | dataset commit active    | Commit the dataset to make it active.               |
+| 4     | ifconfig up              | Enable the network interface.                       |
+| 5     | udp open                 | Open a UDP socket for communication.                |
+| 6     | udp bind :: <port>       | Bind the UDP socket to the specified port.          |
+| 7     | joiner start <key>       | Start the joiner mode using a specific key.         |
+| 8     | thread start             | Start the Thread network.                           |
+
+
+Joiner Commands Reconnect
+---------------
+| Order | Command                  | Purpose                                              |
+|-------|--------------------------|------------------------------------------------------|
+| 1     | dataset clear            | Clear any existing dataset.                         |
+| 2     | dataset channel <channel>            | Set the communication channel for the network.      |
+| 3     | dataset panid 0x1234                 | Set the PAN ID for the network.                     |
+| 5     | dataset networkkey <key>             | Set the network encryption key.                     |
+| 6     | dataset commit active                | Commit the dataset to make it active.               |
+| 7     | ifconfig up                          | Enable the network interface.                       |
+| 8     | udp open                             | Open a UDP socket for communication.                |
+| 9     | udp bind :: <port>                   | Bind the UDP socket to the specified port.          |
+| 10    | thread start                         | Start the Thread network.                           |
+
