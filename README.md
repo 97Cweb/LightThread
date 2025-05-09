@@ -13,4 +13,4 @@
 Clone this repo into your Arduino `libraries` folder:
 
 ```bash
-git clone https://github.com/YourUsername/LightThread.git
+git clone https://github.com/97Cweb/LightThread.git
