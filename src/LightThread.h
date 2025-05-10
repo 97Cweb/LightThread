@@ -5,7 +5,6 @@
 #include <OThreadCLI.h>  // must include full header
 
 
-
 enum class Role {
     LEADER,
     JOINER
@@ -32,19 +31,16 @@ enum class State {
 };
 
 enum AckType {
-	NO_ACK = 0x00,    // No acknowledgment required
-	ACK_REQUIRED = 0x99, // Acknowledgment required
-	RETURN_ACK = 0x98,  // Returning acknowledgment
-	ACK_REQUIRED_RETRY = 0x97 // Acknowledgment required but issued by retry, do not put in queue
+	NONE = 0x00,          // No ack needed (broadcast, simple fire-and-forget)
+    REQUEST = 0x99,       // Receiver must reply
+    RESPONSE = 0x98       // This is an ack/reply to REQUEST
 };
 	
 enum MessageType {
-	NORMAL = 0x00,
-	PAIR_REQUEST = 0x01,     // Pairing request byte
-	PAIR_ACK = 0x02,         // Acknowledgment for pairing
-	RECONNECT_NOTIFY = 0x03, // Reconnecting message from joiner to leader
-	HEARTBEAT = 0x04,
-	UNKNOWN_MESSAGE = 0xFF   // Fallback for unrecognized messages
+	NORMAL = 0x00,     // Beeton payload
+    PAIRING = 0x01,    // Used for initiating and confirming pairing
+    RECONNECT = 0x02,  // Used for auto-reconnect flow
+    HEARTBEAT = 0x03   // Regular ping/pong exchange
 };
 
 class LightThread {
@@ -56,16 +52,19 @@ public:
 
     void setState(State newState);
     bool inState(State expected) const;
-    bool justEnteredState(unsigned long thresholdMs = 250) const;
 
 private:
     Role role;
     State state;
     unsigned long stateEntryTime = 0;
+	bool justEntered = true;
+
 
     uint8_t buttonPin;
 
     void processState();
+	unsigned long timeInState() const;
+
 
     // Top-level state handlers
     void handleInit();
@@ -94,8 +93,23 @@ private:
     void clearPersistentState(); // to be implemented elsewhere
 	
 	bool execAndMatch(const String& command, const String& mustContain = "", String* out = nullptr, unsigned long timeoutMs = 1000);
-	bool waitForString(String& output, unsigned long timeoutMs, const char* endToken);
-	void handleUdpActive();
+	bool otGetResp(String& lineOut, bool& isUDP, unsigned long timeoutMs = 100);
+	bool waitForString(String& responseBuffer, unsigned long timeoutMs, const String& matchStr = "Done");
+
+	void handleUdpLine(const String& line);
+	void handleCliLine(const String& line);
+	bool processCLIChar(char c, String& multiline, bool& isUDP, String& lineOut);
+
+	uint16_t packMessage(AckType ack, MessageType type);
+	void unpackMessage(uint16_t raw, AckType& ack, MessageType& type);
+	bool parseIncomingPayload(const String& hex, AckType& ack, MessageType& type, std::vector<uint8_t>& payloadOut);
+	uint64_t generateMacHash();
+	bool sendUdpPacket(AckType ack, MessageType type, const uint8_t* payload, size_t length, const String& destIp, uint16_t destPort);
+	bool sendUdpPacket(AckType ack, MessageType type, const std::vector<uint8_t>& payload, const String& destIp, uint16_t destPort);
+	String extractUdpSourceIp(const String& line);
+	
+	bool convertHexToBytes(const String& hex, std::vector<uint8_t>& out);
+	String convertBytesToHex(const uint8_t* data, size_t len);
 
 };
 
