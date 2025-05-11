@@ -6,8 +6,8 @@ void LightThread::handleJoinerStart() {
         log_i("JOINER_START: initializing joiner...");
 
         execAndMatch("dataset clear", "Done");
-        execAndMatch("dataset panid 0xffff", "Done");
-        execAndMatch("dataset channel 11", "Done");
+        execAndMatch("dataset panid " + configuredPanid, "Done");
+		execAndMatch("dataset channel " + String(configuredChannel), "Done");
         execAndMatch("dataset commit active", "Done");
         execAndMatch("ifconfig up", "Done");
         execAndMatch("udp open", "Done");

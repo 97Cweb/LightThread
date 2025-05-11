@@ -1,8 +1,7 @@
 #include <LightThread.h>
 
-#define JOIN_BUTTON_PIN 9
 
-LightThread lightThread(JOIN_BUTTON_PIN, Role::LEADER);
+LightThread lightThread;
 
 void setup() {
     Serial.begin(115200);

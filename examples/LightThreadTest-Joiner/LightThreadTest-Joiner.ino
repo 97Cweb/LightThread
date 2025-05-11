@@ -1,15 +1,13 @@
 #include <LightThread.h>
 
-#define JOIN_BUTTON_PIN 9
-
-LightThread thread(JOIN_BUTTON_PIN, Role::JOINER);
+LightThread lightThread;
 
 void setup() {
   Serial.begin(115200);
-  thread.begin();
+  lightThread.begin();
 }
 
 void loop() {
-  thread.update();
+  lightThread.update();
   delay(10);
 }

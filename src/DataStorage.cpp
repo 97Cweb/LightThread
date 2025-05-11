@@ -1,4 +1,197 @@
 #include "LightThread.h"
-void LightThread::clearPersistentState() {
-    log_i("[Stub] clearPersistentState() called. Implement this for NVS wipe.");
+#include <ArduinoJson.h>
+#include <FS.h>
+#include <SD.h>
+
+bool LightThread::loadNetworkConfig() {
+    if (!SD.begin()) {
+        log_e("SD card mount failed");
+        return false;
+    }
+
+    File configFile = SD.open("/network.json");
+    if (!configFile) {
+        log_w("/network.json not found. Creating default.");
+        createDefaultNetworkConfig();
+        return false;
+    }
+
+    String jsonStr;
+    while (configFile.available()) {
+        jsonStr += (char)configFile.read();
+    }
+    configFile.close();
+
+    return parseNetworkJson(jsonStr);
 }
+
+bool LightThread::parseNetworkJson(const String& jsonStr) {
+    StaticJsonDocument<512> doc;
+    DeserializationError err = deserializeJson(doc, jsonStr);
+    if (err) {
+        log_e("JSON parse error: %s", err.c_str());
+        return false;
+    }
+
+    // Parse identity → role
+    if (!doc.containsKey("identity") || !doc["identity"].containsKey("role")) {
+        log_e("Missing 'identity.role' in network.json");
+        return false;
+    }
+
+    String roleStr = (const char*)doc["identity"]["role"];
+    roleStr.toLowerCase();
+
+    if (roleStr == "leader") {
+        role = Role::LEADER;
+        roleLoadedFromConfig = true;
+    } else if (roleStr == "joiner") {
+        role = Role::JOINER;
+        roleLoadedFromConfig = true;
+    } else {
+        log_e("Invalid role '%s' in network.json", roleStr.c_str());
+        return false;
+    }
+
+    // Parse network section
+    JsonObject network = doc["network"];
+    if (!network.containsKey("channel") || !network.containsKey("meshlocalprefix") || !network.containsKey("panid")) {
+        log_e("Missing required network keys");
+        return false;
+    }
+
+    configuredChannel = network["channel"];
+    configuredPrefix = (const char*)network["meshlocalprefix"];
+    configuredPanid = (const char*)network["panid"];
+
+    log_i("Config loaded: role=%s, channel=%d, prefix=%s, panid=%s",
+          roleStr.c_str(), configuredChannel, configuredPrefix.c_str(), configuredPanid.c_str());
+
+    return true;
+}
+
+void LightThread::createDefaultNetworkConfig() {
+    if (!SD.exists("/config")) {
+        SD.mkdir("/config");
+    }
+
+    StaticJsonDocument<512> doc;
+    JsonObject identity = doc.createNestedObject("identity");
+    identity["role"] = "leader";
+
+    JsonObject network = doc.createNestedObject("network");
+    network["channel"] = 11;
+    network["meshlocalprefix"] = "fd00::";
+    network["panid"] = "0x1234";
+
+    File file = SD.open("/config/network.json", FILE_WRITE);
+    if (!file) {
+        log_e("Failed to create default /config/network.json");
+        return;
+    }
+
+    serializeJsonPretty(doc, file);
+    file.close();
+
+    log_i("Default /network.json created");
+}
+
+
+bool LightThread::addJoinerEntry(const String& ip, const String& hashmac) {
+    if (!SD.begin()) return false;
+
+    if (!SD.exists("/cache")) {
+        SD.mkdir("/cache");
+    }
+
+    if (isJoinerKnown(hashmac)) return true;
+
+    File file = SD.open("/cache/joiners.csv", FILE_APPEND);
+    if (!file) {
+        log_e("Failed to open joiners.csv for append");
+        return false;
+    }
+
+    file.printf("%s,%s\n", ip.c_str(), hashmac.c_str());
+    file.close();
+    log_i("Joiner added: %s [%s]", ip.c_str(), hashmac.c_str());
+    return true;
+}
+
+
+bool LightThread::isJoinerKnown(const String& hashmac) {
+    File file = SD.open("/cache/joiners.csv");
+    if (!file) return false;
+
+    while (file.available()) {
+        String line = file.readStringUntil('\n');
+        int commaIndex = line.indexOf(',');
+        if (commaIndex == -1) continue;
+
+        String existingHash = line.substring(commaIndex + 1);
+        existingHash.trim();
+
+        if (existingHash == hashmac) {
+            file.close();
+            return true;
+        }
+    }
+
+    file.close();
+    return false;
+}
+
+
+bool LightThread::saveLeaderInfo(const String& ip, const String& hashmac) {
+    if (!SD.begin()) return false;
+
+    if (!SD.exists("/cache")) {
+        SD.mkdir("/cache");
+    }
+
+    StaticJsonDocument<256> doc;
+    doc["leader_ip"] = ip;
+    doc["leader_hash"] = hashmac;
+
+    File file = SD.open("/cache/leader.json", FILE_WRITE);
+    if (!file) {
+        log_e("Failed to write leader.json");
+        return false;
+    }
+
+    serializeJsonPretty(doc, file);
+    file.close();
+    return true;
+}
+
+
+
+
+bool LightThread::loadLeaderInfo(String& outIp, String& outHashmac) {
+    File file = SD.open("/cache/leader.json");
+    if (!file) return false;
+
+    StaticJsonDocument<256> doc;
+    DeserializationError err = deserializeJson(doc, file);
+    file.close();
+    if (err) return false;
+
+    outIp = (const char*)doc["leader_ip"];
+    outHashmac = (const char*)doc["hashmac"];
+    return true;
+}
+
+
+
+void LightThread::clearPersistentState() {
+    log_w("WIPING all stored configuration");
+
+    SD.remove("/config/network.json");
+    SD.remove("/cache/joiners.csv");
+    SD.remove("/cache/leader.json");
+
+    createDefaultNetworkConfig();  // recreate fresh network.json
+}
+
+
+

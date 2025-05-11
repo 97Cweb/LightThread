@@ -46,25 +46,54 @@ void LightThread::handleUdpLine(const String& line) {
     }
 
     else if (ack == AckType::RESPONSE && msg == MessageType::PAIRING && inState(State::JOINER_WAIT_ACK)) {
-        log_i("JOINER_WAIT_ACK: Got PAIRING RESPONSE from %s", srcIp.c_str());
-        setState(State::JOINER_PAIRED);
-    }
+		log_i("JOINER_WAIT_ACK: Got PAIRING RESPONSE from %s", srcIp.c_str());
+
+		if (payload.size() != 8) {
+			log_w("JOINER_WAIT_ACK: Expected 8-byte hashmac in response");
+			setState(State::ERROR);
+			return;
+		}
+
+		leaderIp = srcIp;
+
+		uint64_t leaderHash = 0;
+		for (int i = 0; i < 8; ++i) {
+			leaderHash <<= 8;
+			leaderHash |= payload[i];
+		}
+
+		String hashStr = String((uint32_t)(leaderHash >> 32), HEX) + String((uint32_t)(leaderHash & 0xFFFFFFFF), HEX);
+		saveLeaderInfo(leaderIp, hashStr);
+
+		setState(State::JOINER_PAIRED);
+	}
+
+
 
     else if (ack == AckType::REQUEST && msg == MessageType::PAIRING && inState(State::COMMISSIONER_ACTIVE)) {
-        uint64_t id = 0;
-        for (size_t i = 0; i < payload.size() && i < 8; ++i) {
-            id <<= 8;
-            id |= payload[i];
-        }
+		uint64_t id = 0;
+		for (size_t i = 0; i < payload.size() && i < 8; ++i) {
+			id <<= 8;
+			id |= payload[i];
+		}
 
-        log_i("COMMISSIONER_ACTIVE: Got joiner ID %016llx from %s — sending direct RESPONSE", id, srcIp.c_str());
+		String hashStr = String((uint32_t)(id >> 32), HEX) + String((uint32_t)(id & 0xFFFFFFFF), HEX);
 
-        std::vector<uint8_t> empty;
-        sendUdpPacket(AckType::RESPONSE, MessageType::PAIRING, empty, srcIp, 12345);
+		addJoinerEntry(srcIp, hashStr);
+
+		log_i("COMMISSIONER_ACTIVE: Got joiner ID %016llx from %s — sending direct RESPONSE", id, srcIp.c_str());
+
+		uint64_t selfHash = generateMacHash();
+		std::vector<uint8_t> hashBytes;
+		for (int i = 7; i >= 0; --i)
+			hashBytes.push_back((selfHash >> (i * 8)) & 0xFF);
+
+		sendUdpPacket(AckType::RESPONSE, MessageType::PAIRING, hashBytes, srcIp, 12345);
+
 		log_i("COMMISSIONER_ACTIVE: Pairing complete, exiting commissioning");
 		setState(State::STANDBY);
+	}
 
-    }
 }
 
 

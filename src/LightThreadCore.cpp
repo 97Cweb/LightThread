@@ -2,8 +2,8 @@
 
 #include "LightThread.h"
 
-LightThread::LightThread(uint8_t buttonPin, Role role)
-    : buttonPin(buttonPin), role(role), state(State::INIT) {
+LightThread::LightThread()
+    : buttonPin(BUTTON_PIN), state(State::INIT) {
     pinMode(buttonPin, INPUT_PULLUP);
 }
 
@@ -80,15 +80,20 @@ void LightThread::handleInit() {
     if (justEntered) {
 		justEntered = false;
         log_i("INIT: Entered initialization state.");
+		
+		if (!loadNetworkConfig()) {
+			setState(State::ERROR);
+			return;
+		}
 
         if (role == Role::LEADER) {
             log_i("LEADER detected. Bootstrapping network setup...");
 
             execAndMatch("dataset init new", "Done");
-            execAndMatch("dataset channel 11", "Done");
-            execAndMatch("dataset panid 0x1234", "Done");
+            execAndMatch("dataset channel " + String(configuredChannel), "Done");
+            execAndMatch("dataset panid " + configuredPanid, "Done");
             execAndMatch("dataset networkkey 00112233445566778899aabbccddeeff", "Done");
-            execAndMatch("dataset meshlocalprefix fd00::", "Done");
+            execAndMatch("dataset meshlocalprefix " + configuredPrefix, "Done");
             execAndMatch("dataset commit active", "Done");
             execAndMatch("ifconfig up", "Done");
             execAndMatch("thread start", "Done");
