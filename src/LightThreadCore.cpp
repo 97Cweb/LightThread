@@ -36,6 +36,8 @@ void LightThread::update() {
     }
 
     updateLighting();
+	updateReliableUdp();
+
 }
 
 void LightThread::setState(State newState) {

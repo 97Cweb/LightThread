@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include <OThreadCLI.h>  // must include full header
+#include <optional>
+
 
 #define BUTTON_PIN 9
 #include <map>
@@ -56,7 +58,15 @@ public:
     void update();  // LightThreadCore.cpp
 
     bool inState(State expected) const;  // LightThreadCore.cpp
+	String getLeaderIp() const { return leaderIp; }
 
+	// ------------------------
+	// exposedUDP.cpp
+	// ------------------------
+	// Exposed UDP (public-facing interface)
+	void registerUdpReceiveCallback(std::function<void(const String&, const std::vector<uint8_t>&)> fn);
+	bool sendUdp(const String& destIp, bool reliable, const std::vector<uint8_t>& payload);
+	
 private:
     // ------------------------
     // Variables: LightThread.h
@@ -80,6 +90,18 @@ private:
 
 	// Heartbeat tracking (Leader)
 	std::map<String, unsigned long> joinerHeartbeatMap;
+	
+	uint16_t nextMessageId = 0;
+
+	struct PendingReliableUdp {
+		String destIp;
+		std::vector<uint8_t> payload;  // Includes messageId prepended
+		unsigned long timeSent;
+		uint8_t retryCount;
+	};
+
+	std::map<uint16_t, PendingReliableUdp> pendingReliableMessages;
+
 
 
     // ------------------------
@@ -144,13 +166,14 @@ private:
     // UDPComm.cpp
     // ------------------------
     void handleUdpLine(const String& line);
-    bool sendUdpPacket(AckType ack, MessageType type, const uint8_t* payload, size_t length, const String& destIp, uint16_t destPort);
-    bool sendUdpPacket(AckType ack, MessageType type, const std::vector<uint8_t>& payload, const String& destIp, uint16_t destPort);
+    bool sendUdpPacket(AckType ack, MessageType type, const uint8_t* payload, size_t length, const String& destIp, uint16_t destPort, std::optional<uint16_t> messageId = std::nullopt);
+    bool sendUdpPacket(AckType ack, MessageType type, const std::vector<uint8_t>& payload, const String& destIp, uint16_t destPort, std::optional<uint16_t> messageId = std::nullopt);
     String extractUdpSourceIp(const String& line);
     uint16_t packMessage(AckType ack, MessageType type);
     void unpackMessage(uint16_t raw, AckType& ack, MessageType& type);
     bool parseIncomingPayload(const String& hex, AckType& ack, MessageType& type, std::vector<uint8_t>& payloadOut);
     uint64_t generateMacHash();
+	void updateReliableUdp();
 
     // ------------------------
     // Utils.cpp
@@ -162,9 +185,8 @@ private:
 	// exposedUDP.cpp
 	// ------------------------
 	// Exposed UDP (public-facing interface)
-	void registerUdpReceiveCallback(std::function<void(const String&, const std::vector<uint8_t>&)> fn);
-	bool sendUdp(const String& destIp, bool reliable, const std::vector<uint8_t>& payload);
-	void handleNormalUdpMessage(const String& srcIp, const std::vector<uint8_t>& payload);
+	void handleNormalUdpMessage(const String& srcIp, const std::vector<uint8_t>& payload, AckType ack);
+
 
 };
 

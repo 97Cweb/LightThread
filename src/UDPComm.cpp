@@ -119,11 +119,19 @@ void LightThread::handleUdpLine(const String& line) {
 	}
 	
 	else if (msg == MessageType::NORMAL) {
-		handleNormalUdpMessage(srcIp, payload);
-	}
+    // Handle ACK (response to a reliable message)
+    if (ack == AckType::RESPONSE && payload.size() >= 2) {
+        uint16_t ackedId = (payload[0] << 8) | payload[1];
+        if (pendingReliableMessages.erase(ackedId)) {
+            log_i("ReliableUDP: ACK received for msgId %u", ackedId);
+        } else {
+            log_w("ReliableUDP: Unexpected ACK for msgId %u", ackedId);
+        }
+    }
 
-
-
+    // Always dispatch to exposed UDP handler
+    handleNormalUdpMessage(srcIp, payload, ack);
+}
 
 }
 
@@ -179,11 +187,11 @@ uint64_t LightThread::generateMacHash() {
     return hash;
 }
 
-bool LightThread::sendUdpPacket(AckType ack, MessageType type, const std::vector<uint8_t>& payload, const String& destIp, uint16_t destPort) {
-    return sendUdpPacket(ack, type, payload.data(), payload.size(), destIp, destPort);
+bool LightThread::sendUdpPacket(AckType ack, MessageType type, const std::vector<uint8_t>& payload, const String& destIp, uint16_t destPort,std::optional<uint16_t> messageId) {
+    return sendUdpPacket(ack, type, payload.data(), payload.size(), destIp, destPort, messageId);
 }
 
-bool LightThread::sendUdpPacket(AckType ack, MessageType type, const uint8_t* payload, size_t length, const String& destIp, uint16_t destPort) {
+bool LightThread::sendUdpPacket(AckType ack, MessageType type, const uint8_t* payload, size_t length, const String& destIp, uint16_t destPort,std::optional<uint16_t> messageId) {
     if (destIp.isEmpty() || destPort == 0) {
         log_w("Invalid UDP destination");
         return false;
@@ -192,6 +200,13 @@ bool LightThread::sendUdpPacket(AckType ack, MessageType type, const uint8_t* pa
     std::vector<uint8_t> fullMsg;
     fullMsg.push_back(static_cast<uint8_t>(ack));
     fullMsg.push_back(static_cast<uint8_t>(type));
+	
+	// Optional: messageId (2 bytes)
+    if (messageId.has_value()) {
+        fullMsg.push_back((messageId.value() >> 8) & 0xFF);
+        fullMsg.push_back(messageId.value() & 0xFF);
+    }
+	
     fullMsg.insert(fullMsg.end(), payload, payload + length);
 
     String hex = convertBytesToHex(fullMsg.data(), fullMsg.size());
@@ -201,5 +216,29 @@ bool LightThread::sendUdpPacket(AckType ack, MessageType type, const uint8_t* pa
 
     OThreadCLI.println(cmd);
     return true;
+}
+
+void LightThread::updateReliableUdp() {
+    unsigned long now = millis();
+
+    for (auto it = pendingReliableMessages.begin(); it != pendingReliableMessages.end(); ) {
+        uint16_t msgId = it->first;
+        PendingReliableUdp& msg = it->second;
+
+        if (now - msg.timeSent >= 2000) {
+            if (msg.retryCount >= 5) {
+                log_w("ReliableUDP: Dropping msgId %u to %s after 5 retries", msgId, msg.destIp.c_str());
+                it = pendingReliableMessages.erase(it);
+                continue;
+            }
+
+            log_i("ReliableUDP: Retrying msgId %u to %s (attempt %u)", msgId, msg.destIp.c_str(), msg.retryCount + 1);
+            sendUdpPacket(AckType::REQUEST, MessageType::NORMAL, msg.payload, msg.destIp, 12345, msgId);
+            msg.timeSent = now;
+            msg.retryCount++;
+        }
+
+        ++it;
+    }
 }
 
