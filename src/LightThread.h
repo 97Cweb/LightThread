@@ -5,6 +5,8 @@
 #include <OThreadCLI.h>  // must include full header
 
 #define BUTTON_PIN 9
+#include <map>
+
 
 
 // --- ENUM DEFINITIONS ---
@@ -71,6 +73,14 @@ private:
     int configuredChannel = -1;
     String configuredPrefix = "";
     String configuredPanid = "";
+	
+	// Heartbeat tracking (Joiner)
+	unsigned long lastHeartbeatSent = 0;
+	unsigned long lastHeartbeatEcho = 0;
+
+	// Heartbeat tracking (Leader)
+	std::map<String, unsigned long> joinerHeartbeatMap;
+
 
     // ------------------------
     // LightThreadCore.cpp
@@ -102,6 +112,10 @@ private:
     void handleJoinerWaitAck();
     void handleJoinerPaired();
     void handleJoinerReconnect();
+	void sendHeartbeatIfDue();
+	void setupJoinerDataset();
+	void setupJoinerThreadDefaults();
+
 
     // ------------------------
     // DataStorage.cpp
@@ -143,6 +157,15 @@ private:
     // ------------------------
     bool convertHexToBytes(const String& hex, std::vector<uint8_t>& out);
     String convertBytesToHex(const uint8_t* data, size_t len);
+	
+	// ------------------------
+	// exposedUDP.cpp
+	// ------------------------
+	// Exposed UDP (public-facing interface)
+	void registerUdpReceiveCallback(std::function<void(const String&, const std::vector<uint8_t>&)> fn);
+	bool sendUdp(const String& destIp, bool reliable, const std::vector<uint8_t>& payload);
+	void handleNormalUdpMessage(const String& srcIp, const std::vector<uint8_t>& payload);
+
 };
 
 #endif // LIGHTTHREAD_H

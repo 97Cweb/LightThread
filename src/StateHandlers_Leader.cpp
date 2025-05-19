@@ -69,4 +69,10 @@ void LightThread::handleCommissionerActive() {
             log_w("COMMISSIONER_ACTIVE: Failed to send PAIR_REQUEST");
         }
     }
+	
+	if (timeInState() > 60000) {
+        log_i("COMMISSIONER_ACTIVE: Pairing Timed out. Transitioning to STANDBY");
+		execAndMatch("commissioner stop", "Done");
+        setState(State::STANDBY);
+    }
 }

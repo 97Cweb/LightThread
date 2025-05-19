@@ -93,6 +93,37 @@ void LightThread::handleUdpLine(const String& line) {
 		log_i("COMMISSIONER_ACTIVE: Pairing complete, exiting commissioning");
 		setState(State::STANDBY);
 	}
+	
+	else if (ack == AckType::NONE && msg == MessageType::HEARTBEAT && role == Role::LEADER) {
+		if (payload.size() != 8) {
+			log_w("HEARTBEAT: Invalid payload from %s", srcIp.c_str());
+			return;
+		}
+
+		uint64_t id = 0;
+		for (int i = 0; i < 8; ++i)
+			id = (id << 8) | payload[i];
+
+		String hashStr = String((uint32_t)(id >> 32), HEX) + String((uint32_t)(id & 0xFFFFFFFF), HEX);
+		log_i("HEARTBEAT: Joiner %s [%s] is alive", srcIp.c_str(), hashStr.c_str());
+
+		joinerHeartbeatMap[srcIp] = millis();  // update last-seen time
+
+		// Echo back
+		sendUdpPacket(AckType::RESPONSE, MessageType::HEARTBEAT, payload, srcIp, 12345);
+	}
+	
+	else if (ack == AckType::RESPONSE && msg == MessageType::HEARTBEAT && role == Role::JOINER) {
+		lastHeartbeatEcho = millis();  // mark as acknowledged
+		log_i("HEARTBEAT: Echo received from leader");
+	}
+	
+	else if (msg == MessageType::NORMAL) {
+		handleNormalUdpMessage(srcIp, payload);
+	}
+
+
+
 
 }
 

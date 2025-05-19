@@ -85,7 +85,8 @@ void LightThread::handleInit() {
 			setState(State::ERROR);
 			return;
 		}
-
+		
+		String tmp;
         if (role == Role::LEADER) {
             log_i("LEADER detected. Bootstrapping network setup...");
 
@@ -100,12 +101,36 @@ void LightThread::handleInit() {
 
             setState(State::LEADER_WAIT_NETWORK);
         } else {
-            setState(State::STANDBY);
+			if (loadLeaderInfo(leaderIp, tmp)) {
+				log_i("INIT: Joiner has saved leader info: %s", leaderIp.c_str());
+				setState(State::JOINER_RECONNECT);
+			} else {
+				log_i("INIT: No saved leader info, standby");
+				setState(State::STANDBY);
+			}
+		}
+
+    }
+}
+
+void LightThread::handleStandby() {
+    if (role != Role::LEADER) return;
+
+    static unsigned long lastCheck = 0;
+    if (millis() - lastCheck < 5000) return;
+    lastCheck = millis();
+
+    unsigned long now = millis();
+    for (auto it = joinerHeartbeatMap.begin(); it != joinerHeartbeatMap.end(); ) {
+        if (now - it->second > 15000) {
+            log_w("STANDBY: Joiner %s timed out — removing from heartbeat map", it->first.c_str());
+            it = joinerHeartbeatMap.erase(it);
+        } else {
+            ++it;
         }
     }
 }
 
-void LightThread::handleStandby() {}
 
 void LightThread::handleError() {}
 
