@@ -80,6 +80,7 @@ void LightThread::handleUdpLine(const String& line) {
 		String hashStr = String((uint32_t)(id >> 32), HEX) + String((uint32_t)(id & 0xFFFFFFFF), HEX);
 
 		addJoinerEntry(srcIp, hashStr);
+		if (joinCallback) joinCallback(srcIp, hashStr);
 
 		log_i("COMMISSIONER_ACTIVE: Got joiner ID %016llx from %s — sending direct RESPONSE", id, srcIp.c_str());
 
@@ -123,6 +124,7 @@ void LightThread::handleUdpLine(const String& line) {
     if (ack == AckType::RESPONSE && payload.size() >= 2) {
         uint16_t ackedId = (payload[0] << 8) | payload[1];
         if (pendingReliableMessages.erase(ackedId)) {
+			if (reliableCallback) reliableCallback(ackedId, srcIp, true);
             log_i("ReliableUDP: ACK received for msgId %u", ackedId);
         } else {
             log_w("ReliableUDP: Unexpected ACK for msgId %u", ackedId);
@@ -227,10 +229,12 @@ void LightThread::updateReliableUdp() {
 
         if (now - msg.timeSent >= 2000) {
             if (msg.retryCount >= 5) {
-                log_w("ReliableUDP: Dropping msgId %u to %s after 5 retries", msgId, msg.destIp.c_str());
-                it = pendingReliableMessages.erase(it);
-                continue;
-            }
+				log_w("ReliableUDP: Dropping msgId %u to %s", msgId, msg.destIp.c_str());
+				if (reliableCallback) reliableCallback(msgId, msg.destIp, false);
+				it = pendingReliableMessages.erase(it);
+				continue;
+			}
+
 
             log_i("ReliableUDP: Retrying msgId %u to %s (attempt %u)", msgId, msg.destIp.c_str(), msg.retryCount + 1);
             sendUdpPacket(AckType::REQUEST, MessageType::NORMAL, msg.payload, msg.destIp, 12345, msgId);

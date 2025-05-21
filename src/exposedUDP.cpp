@@ -1,7 +1,6 @@
 #include "LightThread.h"
-
-// Internal: stored callback from Beeton
-static std::function<void(const String& srcIp, const std::vector<uint8_t>& payload)> udpCallback = nullptr;
+#include <FS.h>
+#include <SD.h>
 
 // Called by UDPComm.cpp after MessageType::NORMAL is parsed
 void LightThread::handleNormalUdpMessage(const String& srcIp, const std::vector<uint8_t>& payload, AckType ack) {
@@ -41,6 +40,18 @@ void LightThread::registerUdpReceiveCallback(std::function<void(const String&, c
     log_i("ExposedUDP: Beeton callback registered");
 }
 
+void LightThread::registerJoinCallback(std::function<void(const String& ip, const String& hashmac)> cb) {
+    joinCallback = cb;
+    log_i("Join callback registered");
+}
+
+void LightThread::registerReliableUdpStatusCallback(std::function<void(uint16_t msgId, const String& ip, bool success)> cb) {
+    reliableCallback = cb;
+    log_i("Reliable UDP status callback registered");
+}
+
+
+
 // Public method: Called by Beeton to send a raw payload to an IP
 bool LightThread::sendUdp(const String& destIp, bool reliable, const std::vector<uint8_t>& userPayload) {
     if (!reliable) {
@@ -58,3 +69,37 @@ bool LightThread::sendUdp(const String& destIp, bool reliable, const std::vector
     return sendUdpPacket(AckType::REQUEST, MessageType::NORMAL, userPayload, destIp, 12345,msgId);
 }
 
+std::map<String, String> LightThread::getKnownJoiners() {
+    std::map<String, String> joiners;
+    File file = SD.open("/cache/joiners.csv");
+    if (!file) return joiners;
+
+    while (file.available()) {
+        String line = file.readStringUntil('\n');
+        int commaIndex = line.indexOf(',');
+        if (commaIndex == -1) continue;
+
+        String ip = line.substring(0, commaIndex);
+        String hash = line.substring(commaIndex + 1);
+        ip.trim(); hash.trim();
+        if (!ip.isEmpty() && !hash.isEmpty()) {
+            joiners[ip] = hash;
+        }
+    }
+
+    file.close();
+    return joiners;
+}
+
+unsigned long LightThread::getLastEchoTime(const String& ip) {
+    if (joinerHeartbeatMap.count(ip)) {
+        return joinerHeartbeatMap[ip];
+    }
+    return 0;  // Or millis() - large number to simulate "never"
+}
+
+bool LightThread::isReady() const {
+    if (role == Role::LEADER) return state == State::STANDBY;
+    if (role == Role::JOINER) return state == State::JOINER_PAIRED;
+    return false;
+}
