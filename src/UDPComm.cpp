@@ -95,24 +95,83 @@ void LightThread::handleUdpLine(const String& line) {
 		setState(State::STANDBY);
 	}
 	
+	else if (ack == AckType::REQUEST && msg == MessageType::RECONNECT && role == Role::LEADER && inState(State::STANDBY)) {
+		if (payload.size() != 8) {
+			log_w("RECONNECT: Invalid payload from %s", srcIp.c_str());
+			return;
+		}
+
+		uint64_t joinerId = 0;
+		for (int i = 0; i < 8; ++i)
+			joinerId = (joinerId << 8) | payload[i];
+
+		String hashStr = String((uint32_t)(joinerId >> 32), HEX) + String((uint32_t)(joinerId & 0xFFFFFFFF), HEX);
+
+		log_i("RECONNECT: Joiner %s [%s] is trying to find the leader", srcIp.c_str(), hashStr.c_str());
+
+		uint64_t selfHash = generateMacHash();
+		std::vector<uint8_t> hashBytes;
+		for (int i = 7; i >= 0; --i)
+			hashBytes.push_back((selfHash >> (i * 8)) & 0xFF);
+
+		sendUdpPacket(AckType::RESPONSE, MessageType::RECONNECT, hashBytes, srcIp, 12345);
+	}
+	
+	else if (ack == AckType::RESPONSE && msg == MessageType::RECONNECT && role == Role::JOINER) {
+		if (payload.size() != 8) {
+			log_w("RECONNECT: Invalid leader hash from %s", srcIp.c_str());
+			return;
+		}
+
+		uint64_t receivedLeaderHash = 0;
+		for (int i = 0; i < 8; ++i)
+			receivedLeaderHash = (receivedLeaderHash << 8) | payload[i];
+
+		uint64_t expectedHash = generateMacHash();  // Joiner's view of the leader hash (loaded at boot)
+		String receivedStr = String((uint32_t)(receivedLeaderHash >> 32), HEX) + String((uint32_t)(receivedLeaderHash & 0xFFFFFFFF), HEX);
+
+		String oldIp = leaderIp;
+		leaderIp = srcIp;
+		lastHeartbeatEcho = millis();
+
+		log_i("RECONNECT: Leader responded from new IP %s [%s]", srcIp.c_str(), receivedStr.c_str());
+
+		// Save new leader IP to disk
+		saveLeaderInfo(leaderIp, receivedStr);
+	}
+
+
+	
 	else if (ack == AckType::NONE && msg == MessageType::HEARTBEAT && role == Role::LEADER) {
 		if (payload.size() != 8) {
 			log_w("HEARTBEAT: Invalid payload from %s", srcIp.c_str());
 			return;
 		}
 
+		// Parse hashMAC from payload
 		uint64_t id = 0;
 		for (int i = 0; i < 8; ++i)
 			id = (id << 8) | payload[i];
 
 		String hashStr = String((uint32_t)(id >> 32), HEX) + String((uint32_t)(id & 0xFFFFFFFF), HEX);
+		
+		unsigned long now = millis();
+		unsigned long lastSeen = joinerHeartbeatMap.count(srcIp) ? joinerHeartbeatMap[srcIp] : 0;
+		joinerHeartbeatMap[srcIp] = now;
+
 		log_i("HEARTBEAT: Joiner %s [%s] is alive", srcIp.c_str(), hashStr.c_str());
 
-		joinerHeartbeatMap[srcIp] = millis();  // update last-seen time
-
-		// Echo back
+		// Echo heartbeat back
 		sendUdpPacket(AckType::RESPONSE, MessageType::HEARTBEAT, payload, srcIp, 12345);
+
+		// Trigger joinCallback if this is a reappearance
+		const unsigned long silenceThreshold = 10000;
+		if (lastSeen == 0 || now - lastSeen > silenceThreshold) {
+			if (joinCallback) joinCallback(srcIp, hashStr);
+			log_i("HEARTBEAT: Joiner %s [%s] reappeared — callback fired", srcIp.c_str(), hashStr.c_str());
+		}
 	}
+
 	
 	else if (ack == AckType::RESPONSE && msg == MessageType::HEARTBEAT && role == Role::JOINER) {
 		lastHeartbeatEcho = millis();  // mark as acknowledged

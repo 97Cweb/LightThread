@@ -191,15 +191,24 @@ void LightThread::sendHeartbeatIfDue() {
     // Send every 5 seconds
     if (millis() - lastHeartbeatSent < 5000) return;
 
-    // Timeout if no echo in 15 seconds
+    // Timeout if no echo in 15 seconds → attempt reconnect query
     if (lastHeartbeatEcho > 0 && millis() - lastHeartbeatEcho > 15000) {
-        log_w("HEARTBEAT: Leader did not respond. Timing out.");
-        setState(State::JOINER_RECONNECT);  // or STANDBY if reconnect logic not desired
+        log_w("HEARTBEAT: Leader not responding. Broadcasting reconnect.");
+
+        // Send RECONNECT request over multicast with own hashMAC
+        uint64_t myHash = generateMacHash();
+        std::vector<uint8_t> payload;
+        for (int i = 7; i >= 0; --i)
+            payload.push_back((myHash >> (i * 8)) & 0xFF);
+
+        sendUdpPacket(AckType::REQUEST, MessageType::RECONNECT, payload, "ff03::1", 12345);
+        lastHeartbeatSent = millis();  // Rate-limit retries
         return;
     }
 
     lastHeartbeatSent = millis();
 
+    // Normal heartbeat to known leader IP
     uint64_t id = generateMacHash();
     std::vector<uint8_t> payload;
     for (int i = 7; i >= 0; --i)
@@ -207,9 +216,8 @@ void LightThread::sendHeartbeatIfDue() {
 
     bool ok = sendUdpPacket(AckType::NONE, MessageType::HEARTBEAT, payload, leaderIp, 12345);
     if (ok) {
-		log_i("HEARTBEAT: Sent to leader");
-	} else {
-		log_w("HEARTBEAT: Failed to send");
-	}
-
+        log_i("HEARTBEAT: Sent to leader");
+    } else {
+        log_w("HEARTBEAT: Failed to send");
+    }
 }
