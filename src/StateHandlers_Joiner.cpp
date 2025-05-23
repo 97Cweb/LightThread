@@ -86,6 +86,13 @@ void LightThread::handleJoinerPaired() {
         escalated = false;
         lastCheck = millis();  // time marker
         log_i("JOINER_PAIRED: storing configuration and entering standby");
+		if (joinCallback) {
+			uint64_t myHash = generateMacHash();
+			String hashStr = String((uint32_t)(myHash >> 32), HEX) + String((uint32_t)(myHash & 0xFFFFFFFF), HEX);
+			joinCallback(leaderIp, hashStr);
+			log_i("JOINER_PAIRED: Fired joinCallback with IP %s and hash %s", leaderIp.c_str(), hashStr.c_str());
+		}
+
     }
 
     sendHeartbeatIfDue();

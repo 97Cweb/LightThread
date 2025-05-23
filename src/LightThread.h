@@ -100,6 +100,7 @@ private:
 
 	// Heartbeat tracking (Leader)
 	std::map<String, unsigned long> joinerHeartbeatMap;
+
 	
 	uint16_t nextMessageId = 0;
 

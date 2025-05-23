@@ -80,8 +80,6 @@ void LightThread::handleUdpLine(const String& line) {
 		String hashStr = String((uint32_t)(id >> 32), HEX) + String((uint32_t)(id & 0xFFFFFFFF), HEX);
 
 		addJoinerEntry(srcIp, hashStr);
-		if (joinCallback) joinCallback(srcIp, hashStr);
-
 		log_i("COMMISSIONER_ACTIVE: Got joiner ID %016llx from %s — sending direct RESPONSE", id, srcIp.c_str());
 
 		uint64_t selfHash = generateMacHash();
@@ -179,20 +177,20 @@ void LightThread::handleUdpLine(const String& line) {
 	}
 	
 	else if (msg == MessageType::NORMAL) {
-    // Handle ACK (response to a reliable message)
-    if (ack == AckType::RESPONSE && payload.size() >= 2) {
-        uint16_t ackedId = (payload[0] << 8) | payload[1];
-        if (pendingReliableMessages.erase(ackedId)) {
-			if (reliableCallback) reliableCallback(ackedId, srcIp, true);
-            log_i("ReliableUDP: ACK received for msgId %u", ackedId);
-        } else {
-            log_w("ReliableUDP: Unexpected ACK for msgId %u", ackedId);
-        }
-    }
+		// Handle ACK first
+		if (ack == AckType::RESPONSE && payload.size() >= 2) {
+			uint16_t ackedId = (payload[0] << 8) | payload[1];
+			if (pendingReliableMessages.erase(ackedId)) {
+				if (reliableCallback) reliableCallback(ackedId, srcIp, true);
+				log_i("ReliableUDP: ACK received for msgId %u", ackedId);
+			} else {
+				log_w("ReliableUDP: Unexpected ACK for msgId %u", ackedId);
+			}
+		}
 
-    // Always dispatch to exposed UDP handler
-    handleNormalUdpMessage(srcIp, payload, ack);
-}
+		handleNormalUdpMessage(srcIp, payload, ack);
+
+	}
 
 }
 

@@ -37,8 +37,10 @@ void LightThread::handleNormalUdpMessage(const String& srcIp, const std::vector<
 // Public method: Called by Beeton to register its handler
 void LightThread::registerUdpReceiveCallback(std::function<void(const String&, const std::vector<uint8_t>&)> fn) {
     udpCallback = fn;
-    log_i("ExposedUDP: Beeton callback registered");
+	log_i("ExposedUDP: UDP callback registered");
+
 }
+
 
 void LightThread::registerJoinCallback(std::function<void(const String& ip, const String& hashmac)> cb) {
     joinCallback = cb;
