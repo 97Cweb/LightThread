@@ -136,6 +136,12 @@ void LightThread::handleUdpLine(const String& line) {
 
 		// Save new leader IP to disk
 		saveLeaderInfo(leaderIp, receivedStr);
+		if (joinCallback) {
+			joinCallback(leaderIp, receivedStr);
+			log_i("RECONNECT: Fired joinCallback with IP %s and hash %s", leaderIp.c_str(), receivedStr.c_str());
+		}
+
+		setState(State::JOINER_PAIRED);
 	}
 
 
@@ -303,3 +309,12 @@ void LightThread::updateReliableUdp() {
     }
 }
 
+void LightThread::attemptReconnectBroadcast() {
+    uint64_t myHash = generateMacHash();
+    std::vector<uint8_t> payload;
+    for (int i = 7; i >= 0; --i)
+        payload.push_back((myHash >> (i * 8)) & 0xFF);
+
+    log_i("RECONNECT: Broadcasting query to find leader");
+    sendUdpPacket(AckType::REQUEST, MessageType::RECONNECT, payload, "ff03::1", 12345);
+}

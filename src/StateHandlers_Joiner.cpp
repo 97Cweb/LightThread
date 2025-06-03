@@ -126,6 +126,7 @@ void LightThread::handleJoinerPaired() {
 void LightThread::handleJoinerReconnect() {
     static bool stackStarted = false;
     static unsigned long lastCheck = 0;
+	static bool reconnectBroadcastSent = false;
 
     if (justEntered) {
         justEntered = false;
@@ -140,9 +141,16 @@ void LightThread::handleJoinerReconnect() {
         lastHeartbeatSent = 0;
         lastHeartbeatEcho = 0;
         lastCheck = 0;
+		reconnectBroadcastSent = false;
     }
 
     sendHeartbeatIfDue();
+	
+	if (!reconnectBroadcastSent && lastHeartbeatEcho == 0 && millis() - lastHeartbeatSent > 10000) {
+        attemptReconnectBroadcast();
+        reconnectBroadcastSent = true;
+        lastHeartbeatSent = millis();  // prevent rapid retries
+    }
 
     if (millis() - lastCheck > 2000) {
         lastCheck = millis();
@@ -158,9 +166,10 @@ void LightThread::handleJoinerReconnect() {
     }
 
     if (timeInState() > 120000) {
-        log_w("JOINER_RECONNECT: Timeout — going to standby");
+        log_w("JOINER_RECONNECT: Timeout — clearing stale leader and going to standby");
         setState(State::STANDBY);
     }
+
 }
 
 void LightThread::setupJoinerDataset() {
@@ -192,6 +201,9 @@ void LightThread::setupJoinerThreadDefaults() {
 
 
 
+
+
+
 void LightThread::sendHeartbeatIfDue() {
     if (leaderIp.isEmpty()) return;
 
@@ -199,7 +211,7 @@ void LightThread::sendHeartbeatIfDue() {
     if (millis() - lastHeartbeatSent < 5000) return;
 
     // Timeout if no echo in 15 seconds → attempt reconnect query
-    if (lastHeartbeatEcho > 0 && millis() - lastHeartbeatEcho > 15000) {
+    if ( millis() - lastHeartbeatEcho > 15000) {
         log_w("HEARTBEAT: Leader not responding. Broadcasting reconnect.");
 
         // Send RECONNECT request over multicast with own hashMAC

@@ -153,6 +153,7 @@ private:
 	void sendHeartbeatIfDue();
 	void setupJoinerDataset();
 	void setupJoinerThreadDefaults();
+	
 
 
     // ------------------------
@@ -190,6 +191,7 @@ private:
     bool parseIncomingPayload(const String& hex, AckType& ack, MessageType& type, std::vector<uint8_t>& payloadOut);
     uint64_t generateMacHash();
 	void updateReliableUdp();
+	void attemptReconnectBroadcast();
 
     // ------------------------
     // Utils.cpp
