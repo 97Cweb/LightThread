@@ -9,9 +9,9 @@ bool LightThread::loadNetworkConfig() {
         return false;
     }
 
-    File configFile = SD.open("/network.json");
+    File configFile = SD.open("/config/network.json");
     if (!configFile) {
-        log_w("/network.json not found. Creating default.");
+        log_w("/config/network.json not found. Creating default.");
         createDefaultNetworkConfig();
         return false;
     }
@@ -77,7 +77,7 @@ void LightThread::createDefaultNetworkConfig() {
 
     StaticJsonDocument<512> doc;
     JsonObject identity = doc.createNestedObject("identity");
-    identity["role"] = "leader";
+    identity["role"] = "joiner";
 
     JsonObject network = doc.createNestedObject("network");
     network["channel"] = 11;
