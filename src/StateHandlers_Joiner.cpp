@@ -141,17 +141,11 @@ void LightThread::handleJoinerReconnect() {
         lastHeartbeatSent = 0;
         lastHeartbeatEcho = 0;
         lastCheck = 0;
-		reconnectBroadcastSent = false;
+	reconnectBroadcastSent = false;
     }
 
     sendHeartbeatIfDue();
-	
-	if (!reconnectBroadcastSent && lastHeartbeatEcho == 0 && millis() - lastHeartbeatSent > 10000) {
-        attemptReconnectBroadcast();
-        reconnectBroadcastSent = true;
-        lastHeartbeatSent = millis();  // prevent rapid retries
-    }
-
+  
     if (millis() - lastCheck > 2000) {
         lastCheck = millis();
         String resp;
@@ -170,6 +164,10 @@ void LightThread::handleJoinerReconnect() {
         setState(State::STANDBY);
     }
 
+}
+
+void LightThread::handleJoinerSeekingLeader(){
+    sendHeartbeatIfDue();
 }
 
 void LightThread::setupJoinerDataset() {
@@ -222,6 +220,7 @@ void LightThread::sendHeartbeatIfDue() {
 
         sendUdpPacket(AckType::REQUEST, MessageType::RECONNECT, payload, "ff03::1", 12345);
         lastHeartbeatSent = millis();  // Rate-limit retries
+        setState(State::JOINER_SEEKING_LEADER);
         return;
     }
 

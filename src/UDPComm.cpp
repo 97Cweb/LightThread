@@ -309,12 +309,4 @@ void LightThread::updateReliableUdp() {
     }
 }
 
-void LightThread::attemptReconnectBroadcast() {
-    uint64_t myHash = generateMacHash();
-    std::vector<uint8_t> payload;
-    for (int i = 7; i >= 0; --i)
-        payload.push_back((myHash >> (i * 8)) & 0xFF);
 
-    log_i("RECONNECT: Broadcasting query to find leader");
-    sendUdpPacket(AckType::REQUEST, MessageType::RECONNECT, payload, "ff03::1", 12345);
-}

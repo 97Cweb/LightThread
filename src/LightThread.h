@@ -28,6 +28,7 @@ enum class State {
     JOINER_WAIT_ACK,
     JOINER_PAIRED,
     JOINER_RECONNECT,
+    JOINER_SEEKING_LEADER,
 
     // Leader path
     LEADER_WAIT_NETWORK,
@@ -150,9 +151,11 @@ private:
     void handleJoinerWaitAck();
     void handleJoinerPaired();
     void handleJoinerReconnect();
-	void sendHeartbeatIfDue();
-	void setupJoinerDataset();
-	void setupJoinerThreadDefaults();
+    void handleJoinerSeekingLeader();
+	
+    void sendHeartbeatIfDue();
+    void setupJoinerDataset();
+    void setupJoinerThreadDefaults();
 	
 
 
@@ -190,9 +193,7 @@ private:
     void unpackMessage(uint16_t raw, AckType& ack, MessageType& type);
     bool parseIncomingPayload(const String& hex, AckType& ack, MessageType& type, std::vector<uint8_t>& payloadOut);
     uint64_t generateMacHash();
-	void updateReliableUdp();
-	void attemptReconnectBroadcast();
-
+    void updateReliableUdp();
     // ------------------------
     // Utils.cpp
     // ------------------------

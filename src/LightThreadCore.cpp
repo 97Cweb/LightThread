@@ -72,6 +72,7 @@ void LightThread::processState() {
         case State::JOINER_WAIT_ACK:       handleJoinerWaitAck(); break;
         case State::JOINER_PAIRED:        handleJoinerPaired(); break;
         case State::JOINER_RECONNECT:     handleJoinerReconnect(); break;
+        case State::JOINER_SEEKING_LEADER: handleJoinerSeekingLeader();
 
         case State::ERROR:               handleError(); break;
         default:                         log_w("Unknown state"); break;
@@ -194,7 +195,7 @@ void LightThread::updateLighting() {
 		
 		case State::LEADER_WAIT_NETWORK:   blink(255, 165, 0); break; // orange blink
 
-        case State::COMMISSIONER_START:    blink(255, 140, 0); break;      // dark orange
+        case State::COMMISSIONER_START:    blink(255, 60, 0); break;      // dark orange
         case State::COMMISSIONER_ACTIVE:   blink(0, 255, 0); break;        // blinking green
 
         case State::JOINER_START:          blink(0, 255, 255); break;      // cyan
@@ -203,6 +204,7 @@ void LightThread::updateLighting() {
         case State::JOINER_WAIT_ACK:       blink(0, 128, 255); break;
         case State::JOINER_PAIRED:         set(0, 255, 0); break;          // solid green
         case State::JOINER_RECONNECT:      blink(255, 255, 0); break;      // blinking yellow
+        case State::JOINER_SEEKING_LEADER: blink(255,60,0); break;        //blinking orange
 
         case State::ERROR:                 blink(255, 0, 0); break;        // blinking red
         default:                           set(255, 0, 255); break;        // magenta (unknown)
