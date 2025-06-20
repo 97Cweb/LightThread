@@ -2,7 +2,7 @@
 #include "esp_mac.h"
 
 
-
+// Parses a line from the CLI to see if it's a UDP message and attempts to parse it.
 void LightThread::handleUdpLine(const String& line) {
     log_d("UDP Received: %s", line.c_str());
 
@@ -252,10 +252,13 @@ uint64_t LightThread::generateMacHash() {
     return hash;
 }
 
+// Overload of sending a UDP UDP packet for a vector.
 bool LightThread::sendUdpPacket(AckType ack, MessageType type, const std::vector<uint8_t>& payload, const String& destIp, uint16_t destPort,std::optional<uint16_t> messageId) {
     return sendUdpPacket(ack, type, payload.data(), payload.size(), destIp, destPort, messageId);
 }
 
+// Sends a UDP packet with the given header and payload.
+// Optionally enables reliable delivery (retry until ACK received).
 bool LightThread::sendUdpPacket(AckType ack, MessageType type, const uint8_t* payload, size_t length, const String& destIp, uint16_t destPort,std::optional<uint16_t> messageId) {
     if (destIp.isEmpty() || destPort == 0) {
         log_w("Invalid UDP destination");

@@ -3,6 +3,9 @@
 #include <FS.h>
 #include <SD.h>
 
+// Loads and parses the network configuration from SD card.
+// If the file is missing, creates a default config.
+// Returns true if config was loaded successfully.
 bool LightThread::loadNetworkConfig() {
     if (!SD.begin()) {
         log_e("SD card mount failed");
@@ -16,6 +19,7 @@ bool LightThread::loadNetworkConfig() {
         return false;
     }
 
+    // Read the file into a string
     String jsonStr;
     while (configFile.available()) {
         jsonStr += (char)configFile.read();
@@ -25,6 +29,8 @@ bool LightThread::loadNetworkConfig() {
     return parseNetworkJson(jsonStr);
 }
 
+// Parses the contents of network.json and extracts configuration fields.
+// Sets internal role and network parameters. Returns false on error.
 bool LightThread::parseNetworkJson(const String& jsonStr) {
     StaticJsonDocument<512> doc;
     DeserializationError err = deserializeJson(doc, jsonStr);
@@ -42,6 +48,7 @@ bool LightThread::parseNetworkJson(const String& jsonStr) {
     String roleStr = (const char*)doc["identity"]["role"];
     roleStr.toLowerCase();
 
+    // Map string to enum Role
     if (roleStr == "leader") {
         role = Role::LEADER;
         roleLoadedFromConfig = true;
@@ -53,7 +60,7 @@ bool LightThread::parseNetworkJson(const String& jsonStr) {
         return false;
     }
 
-    // Parse network section
+    // Parse network details
     JsonObject network = doc["network"];
     if (!network.containsKey("channel") || !network.containsKey("meshlocalprefix") || !network.containsKey("panid")) {
         log_e("Missing required network keys");
@@ -70,6 +77,7 @@ bool LightThread::parseNetworkJson(const String& jsonStr) {
     return true;
 }
 
+// Creates a default /config/network.json with joiner role and safe defaults.
 void LightThread::createDefaultNetworkConfig() {
     if (!SD.exists("/config")) {
         SD.mkdir("/config");
@@ -96,7 +104,8 @@ void LightThread::createDefaultNetworkConfig() {
     log_i("Default /network.json created");
 }
 
-
+// Appends a new joiner to joiners.csv unless already known.
+// Returns true on success.
 bool LightThread::addJoinerEntry(const String& ip, const String& hashmac) {
     if (!SD.begin()) return false;
 
@@ -118,7 +127,8 @@ bool LightThread::addJoinerEntry(const String& ip, const String& hashmac) {
     return true;
 }
 
-
+// Checks joiners.csv for an existing entry matching hashmac.
+// Returns true if found.
 bool LightThread::isJoinerKnown(const String& hashmac) {
     File file = SD.open("/cache/joiners.csv");
     if (!file) return false;
@@ -141,7 +151,8 @@ bool LightThread::isJoinerKnown(const String& hashmac) {
     return false;
 }
 
-
+// Writes the current leader IP and hashmac to leader.json.
+// Used by joiners to store their commissioner.
 bool LightThread::saveLeaderInfo(const String& ip, const String& hashmac) {
     if (!SD.begin()) return false;
 
@@ -164,9 +175,8 @@ bool LightThread::saveLeaderInfo(const String& ip, const String& hashmac) {
     return true;
 }
 
-
-
-
+// Reads stored leader info back into out parameters.
+// Returns false if not found or parse error.
 bool LightThread::loadLeaderInfo(String& outIp, String& outHashmac) {
     File file = SD.open("/cache/leader.json");
     if (!file) return false;
@@ -181,8 +191,8 @@ bool LightThread::loadLeaderInfo(String& outIp, String& outHashmac) {
     return true;
 }
 
-
-
+// Removes all persistent config and joiner/leader tracking files.
+// Useful for full reset via long-press or factory wipe.
 void LightThread::clearPersistentState() {
     log_w("WIPING all stored configuration");
 

@@ -1,45 +1,48 @@
-// LightThreadCore.cpp — fresh rewrite scaffold
-
 #include "LightThread.h"
 
+// Constructor: sets initial state and configures button pin
 LightThread::LightThread()
     : buttonPin(BUTTON_PIN), state(State::INIT) {
     pinMode(buttonPin, INPUT_PULLUP);
 }
 
+// Begin routine: initializes CLI, resets state machine
 void LightThread::begin() {
     log_i("LightThread begin()");
-    OThreadCLI.begin(false);
-    OThreadCLI.setTimeout(250);
-	setState(State::INIT);
+    OThreadCLI.begin(false);        // Start CLI interface (non-blocking)
+    OThreadCLI.setTimeout(250);     // Set CLI read timeout
+    setState(State::INIT);          // Enter INIT state
 }
 
+// Main loop update: handles input and state transitions
 void LightThread::update() {
-    handleButton();
-    processState();
+    handleButton();         // Check for button presses
+    processState();         // Call the handler for current state
 
     String cliBuffer;
     String udpLine;
     bool isUDP;
-
+    
+    // Read characters from CLI and process full lines
     while (OThreadCLI.available()) {
         char c = OThreadCLI.read();
 
         if (processCLIChar(c, cliBuffer, isUDP, udpLine)) {
             if (isUDP) {
-                handleUdpLine(udpLine);
+                handleUdpLine(udpLine);  // Handle incoming UDP
             } else {
-                handleCliLine(cliBuffer);
-                cliBuffer = "";
+                handleCliLine(cliBuffer);  // Handle CLI output
+                cliBuffer = "";            // Clear buffer
             }
         }
     }
 
-    updateLighting();
-	updateReliableUdp();
+    updateLighting();       // Update RGB LED
+    updateReliableUdp();    // Retry pending reliable messages
 
 }
 
+// Sets the current FSM state and resets its entry timer
 void LightThread::setState(State newState) {
     if (state != newState) {
         log_i("State transition: %d → %d", static_cast<int>(state), static_cast<int>(newState));
@@ -49,48 +52,53 @@ void LightThread::setState(State newState) {
     }
 }
 
+// Checks if currently in a specific FSM state
 bool LightThread::inState(State expected) const {
     return state == expected;
 }
 
+// Returns how long the current state has been active
 unsigned long LightThread::timeInState() const {
     return millis() - stateEntryTime;
 }
 
+// Dispatches the appropriate handler for the current state
 void LightThread::processState() {
     switch (state) {
-        case State::INIT:                handleInit(); break;
-        case State::STANDBY:             handleStandby(); break;
+        case State::INIT:                 handleInit(); break;
+        case State::STANDBY:              handleStandby(); break;
 
-		case State::LEADER_WAIT_NETWORK:  handleLeaderWaitNetwork(); break;
+	case State::LEADER_WAIT_NETWORK:  handleLeaderWaitNetwork(); break;
         case State::COMMISSIONER_START:   handleCommissionerStart(); break;
         case State::COMMISSIONER_ACTIVE:  handleCommissionerActive(); break;
 
         case State::JOINER_START:         handleJoinerStart(); break;
         case State::JOINER_SCAN:          handleJoinerScan(); break;
-        case State::JOINER_WAIT_BROADCAST: handleJoinerWaitBroadcast(); break;
-        case State::JOINER_WAIT_ACK:       handleJoinerWaitAck(); break;
+        case State::JOINER_WAIT_BROADCAST:handleJoinerWaitBroadcast(); break;
+        case State::JOINER_WAIT_ACK:      handleJoinerWaitAck(); break;
         case State::JOINER_PAIRED:        handleJoinerPaired(); break;
         case State::JOINER_RECONNECT:     handleJoinerReconnect(); break;
-        case State::JOINER_SEEKING_LEADER: handleJoinerSeekingLeader();
+        case State::JOINER_SEEKING_LEADER:handleJoinerSeekingLeader();
 
         case State::ERROR:               handleError(); break;
         default:                         log_w("Unknown state"); break;
     }
 }
 
+// Initial state: load config, setup network, choose FSM path
 void LightThread::handleInit() {
     if (justEntered) {
-		justEntered = false;
+	justEntered = false;
         log_i("INIT: Entered initialization state.");
 		
-		if (!loadNetworkConfig()) {
-			setState(State::ERROR);
-			return;
-		}
+	if (!loadNetworkConfig()) {
+		setState(State::ERROR);
+		return;
+	}
 		
-		String tmp;
+	String tmp;
         if (role == Role::LEADER) {
+            // Setup the Thread network from scratch
             log_i("LEADER detected. Bootstrapping network setup...");
 
             execAndMatch("dataset init new", "Done");
@@ -103,19 +111,22 @@ void LightThread::handleInit() {
             execAndMatch("thread start", "Done");
 
             setState(State::LEADER_WAIT_NETWORK);
-        } else {
-			if (loadLeaderInfo(leaderIp, tmp)) {
-				log_i("INIT: Joiner has saved leader info: %s", leaderIp.c_str());
-				setState(State::JOINER_RECONNECT);
-			} else {
-				log_i("INIT: No saved leader info, standby");
-				setState(State::STANDBY);
-			}
-		}
-
+        } 
+        else {
+	  if (loadLeaderInfo(leaderIp, tmp)) {
+	    log_i("INIT: Joiner has saved leader info: %s", leaderIp.c_str());
+	    setState(State::JOINER_RECONNECT);
+	  }
+	  else {
+	    log_i("INIT: No saved leader info, standby");
+	    setState(State::STANDBY);
+	  }
+	}
     }
 }
 
+
+// Leader standby: monitor joiner heartbeats and remove stale entries
 void LightThread::handleStandby() {
     if (role != Role::LEADER) return;
 
@@ -134,9 +145,10 @@ void LightThread::handleStandby() {
     }
 }
 
-
+// Placeholder error handler (can be expanded)
 void LightThread::handleError() {}
 
+// Reads the button and responds to short/long presses
 void LightThread::handleButton() {
     static bool buttonPressed = false;
     static unsigned long pressStart = 0;
@@ -158,12 +170,15 @@ void LightThread::handleButton() {
         }
 
         if (duration >= 3000) {
+          // Long press = factory reset (for joiners only)
             log_i("Long press");
             if (role == Role::JOINER) {
                 clearPersistentState();
                 setState(State::STANDBY);
             }
-        } else {
+        } 
+        else {
+            // Short press = trigger pairing
             log_i("Short press");
             if (state == State::STANDBY) {
                 setState(role == Role::LEADER ? State::COMMISSIONER_START : State::JOINER_START);
@@ -172,6 +187,8 @@ void LightThread::handleButton() {
     }
 }
 
+
+// Updates the onboard RGB LED color based on current FSM state
 void LightThread::updateLighting() {
 #ifdef RGB_BUILTIN
     static unsigned long lastBlink = 0;

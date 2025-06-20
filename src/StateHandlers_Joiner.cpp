@@ -1,15 +1,17 @@
 #include "LightThread.h"
 
+// Starts the joiner process by configuring dataset and launching join
 void LightThread::handleJoinerStart() {
     if (justEntered) {
-		justEntered = false;
+	justEntered = false;
         log_i("JOINER_START: initializing joiner...");
 
-        setupJoinerDataset();
-		setupJoinerThreadDefaults();
-        execAndMatch("joiner start J01NME", "Done");
+        setupJoinerDataset();           // Sets network parameters
+        setupJoinerThreadDefaults();    // Configures thread options
+        execAndMatch("joiner start J01NME", "Done");  // Start joiner role
     }
 
+    // After a brief delay, start Thread stack
     if (timeInState() > 500) {
         execAndMatch("thread start", "Done");
         log_i("JOINER_START: Thread start issued");
@@ -17,11 +19,12 @@ void LightThread::handleJoinerStart() {
     }
 }
 
+// Checks for joiner success/failure and transitions accordingly
 void LightThread::handleJoinerScan() {
     static unsigned long lastCheck = 0;
 
     if (justEntered) {
-		justEntered = false;
+	justEntered = false;
         log_i("JOINER_SCAN: checking joiner state...");
         lastCheck = 0;
     }
@@ -42,33 +45,34 @@ void LightThread::handleJoinerScan() {
     }
 }
 
+// Waits for leader’s WHOAMI broadcast
 void LightThread::handleJoinerWaitBroadcast() {
     if (justEntered) {
-		justEntered = false;
+	justEntered = false;
         log_i("JOINER_WAIT_BROADCAST: Listening for leader broadcast...");
     }
 
     if (!inState(State::JOINER_WAIT_BROADCAST)) return;
-	
-	if (timeInState() % 5000 < 50) {  // Roughly every 5s
-		String stateResp;
-		execAndMatch("state", "", &stateResp, 500);
-		log_d("JOINER_WAIT_BROADCAST: current Thread state: %s", stateResp.c_str());
-	}
+    
+    // Log current state every ~5 seconds
+    if (timeInState() % 5000 < 50) {
+	String stateResp;
+	execAndMatch("state", "", &stateResp, 500);
+	log_d("JOINER_WAIT_BROADCAST: current Thread state: %s", stateResp.c_str());
+    }
 
-
+    // Timeout fallback
     if (millis() - stateEntryTime > 20000) {
         log_w("JOINER_WAIT_BROADCAST: Timed out waiting for broadcast.");
         setState(State::STANDBY);
         return;
     }
-
-    // No longer handles UDP explicitly here — handled globally in update()
 }
 
+// Waits for leader to acknowledge our response
 void LightThread::handleJoinerWaitAck() {
     if (justEntered) {
-		justEntered = false;
+	justEntered = false;
         log_i("JOINER_WAIT_ACK: Waiting for PAIR_ACK...");
     }
 
@@ -77,6 +81,9 @@ void LightThread::handleJoinerWaitAck() {
         setState(State::STANDBY);
     }
 }
+
+
+// Fully paired state — sends heartbeat, escalates if needed
 void LightThread::handleJoinerPaired() {
     static bool escalated = false;
     static unsigned long lastCheck = 0;
@@ -86,17 +93,18 @@ void LightThread::handleJoinerPaired() {
         escalated = false;
         lastCheck = millis();  // time marker
         log_i("JOINER_PAIRED: storing configuration and entering standby");
-		if (joinCallback) {
-			uint64_t myHash = generateMacHash();
-			String hashStr = String((uint32_t)(myHash >> 32), HEX) + String((uint32_t)(myHash & 0xFFFFFFFF), HEX);
-			joinCallback(leaderIp, hashStr);
-			log_i("JOINER_PAIRED: Fired joinCallback with IP %s and hash %s", leaderIp.c_str(), hashStr.c_str());
-		}
+	if (joinCallback) {
+	  uint64_t myHash = generateMacHash();
+	  String hashStr = String((uint32_t)(myHash >> 32), HEX) + String((uint32_t)(myHash & 0xFFFFFFFF), HEX);
+	  joinCallback(leaderIp, hashStr);
+	  log_i("JOINER_PAIRED: Fired joinCallback with IP %s and hash %s", leaderIp.c_str(), hashStr.c_str());
+	}
 
     }
 
     sendHeartbeatIfDue();
-
+    
+    // Optional escalation to router-delegation-node (rdn)
     if (!escalated && millis() - lastCheck > 5000) {
         String stateResp;
         if (execAndMatch("state", "", &stateResp, 1000)) {
@@ -122,7 +130,7 @@ void LightThread::handleJoinerPaired() {
     }
 }
 
-
+// Attempt to reconnect to last known leader
 void LightThread::handleJoinerReconnect() {
     static bool stackStarted = false;
     static unsigned long lastCheck = 0;
@@ -132,9 +140,9 @@ void LightThread::handleJoinerReconnect() {
         justEntered = false;
         log_i("JOINER_RECONNECT: bringing up stack for auto-heal");
 		
-		setupJoinerDataset();
-		setupJoinerThreadDefaults();
-		execAndMatch("thread start", "Done");
+	setupJoinerDataset();
+	setupJoinerThreadDefaults();
+	execAndMatch("thread start", "Done");
 
 
         stackStarted = true;
@@ -145,7 +153,8 @@ void LightThread::handleJoinerReconnect() {
     }
 
     sendHeartbeatIfDue();
-  
+    
+    // Check if we're reattached to the mesh
     if (millis() - lastCheck > 2000) {
         lastCheck = millis();
         String resp;
@@ -158,57 +167,29 @@ void LightThread::handleJoinerReconnect() {
             }
         }
     }
-
+    
+    // Timeout and fallback
     if (timeInState() > 120000) {
-        log_w("JOINER_RECONNECT: Timeout — clearing stale leader and going to standby");
+        log_w("JOINER_RECONNECT: Timeout — going to standby");
         setState(State::STANDBY);
     }
 
 }
 
+
+// Called when actively retrying multicast reconnect
 void LightThread::handleJoinerSeekingLeader(){
     sendHeartbeatIfDue();
 }
 
-void LightThread::setupJoinerDataset() {
-    execAndMatch("dataset clear", "Done");
-	execAndMatch("dataset init new", "Done");  // REQUIRED
-	execAndMatch("dataset panid " + configuredPanid, "Done");
-	execAndMatch("dataset channel " + String(configuredChannel), "Done");
-	execAndMatch("dataset meshlocalprefix " + configuredPrefix, "Done");
-	execAndMatch("dataset networkkey 00112233445566778899aabbccddeeff", "Done");
-	execAndMatch("dataset networkname OpenThreadMesh", "Done");  // REQUIRED
-
-}
-
-void LightThread::setupJoinerThreadDefaults() {
-	String resp;
-    execAndMatch("mode rn", "Done");               // Full router-capable node
-    execAndMatch("routerselectionjitter 0", "Done"); // Never auto-promote to leader
-	execAndMatch("routerupgradethreshold 255", "Done");
-	execAndMatch("routerdowngradethreshold 1", "Done");  // So it never tries to stick as router if it ever gets one
-    execAndMatch("dataset commit active", "Done");
-	execAndMatch("dataset active", "", &resp, 1000);
-	log_d("DATASET: %s", resp.c_str());
-
-    execAndMatch("ifconfig up", "Done");
-	execAndMatch("udp close", "Done");
-    execAndMatch("udp open", "Done");
-    execAndMatch("udp bind :: 12345", "Done");
-}
-
-
-
-
-
-
+// Heartbeat logic for JOINER: sends echo, triggers reconnect on timeout
 void LightThread::sendHeartbeatIfDue() {
     if (leaderIp.isEmpty()) return;
 
     // Send every 5 seconds
     if (millis() - lastHeartbeatSent < 5000) return;
 
-    // Timeout if no echo in 15 seconds → attempt reconnect query
+    // No echo in 15s → assume leader is dead and trigger reconnect
     if ( millis() - lastHeartbeatEcho > 15000) {
         log_w("HEARTBEAT: Leader not responding. Broadcasting reconnect.");
 
@@ -238,4 +219,32 @@ void LightThread::sendHeartbeatIfDue() {
     } else {
         log_w("HEARTBEAT: Failed to send");
     }
+}
+
+// Prepares default dataset for joiner
+void LightThread::setupJoinerDataset() {
+    execAndMatch("dataset clear", "Done");
+    execAndMatch("dataset init new", "Done");  // REQUIRED
+    execAndMatch("dataset panid " + configuredPanid, "Done");
+    execAndMatch("dataset channel " + String(configuredChannel), "Done");
+    execAndMatch("dataset meshlocalprefix " + configuredPrefix, "Done");
+    execAndMatch("dataset networkkey 00112233445566778899aabbccddeeff", "Done");
+    execAndMatch("dataset networkname OpenThreadMesh", "Done");  // REQUIRED
+}
+
+// Applies default network and routing settings for joiners
+void LightThread::setupJoinerThreadDefaults() {
+    String resp;
+    execAndMatch("mode rn", "Done");               // Full router-capable node
+    execAndMatch("routerselectionjitter 0", "Done"); // Never auto-promote to leader
+    execAndMatch("routerupgradethreshold 255", "Done");
+    execAndMatch("routerdowngradethreshold 1", "Done");  // So it never tries to stick as router if it ever gets one
+    execAndMatch("dataset commit active", "Done");
+    execAndMatch("dataset active", "", &resp, 1000);
+    log_d("DATASET: %s", resp.c_str());
+
+    execAndMatch("ifconfig up", "Done");
+    execAndMatch("udp close", "Done");
+    execAndMatch("udp open", "Done");
+    execAndMatch("udp bind :: 12345", "Done");
 }
