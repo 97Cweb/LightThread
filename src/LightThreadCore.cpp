@@ -8,7 +8,7 @@ LightThread::LightThread()
 
 // Begin routine: initializes CLI, resets state machine
 void LightThread::begin() {
-    log_i("LightThread begin()");
+    logLightThread(LT_LOG_INFO,"LightThread begin()");
     OThreadCLI.begin(false);        // Start CLI interface (non-blocking)
     OThreadCLI.setTimeout(250);     // Set CLI read timeout
     setState(State::INIT);          // Enter INIT state
@@ -45,7 +45,7 @@ void LightThread::update() {
 // Sets the current FSM state and resets its entry timer
 void LightThread::setState(State newState) {
     if (state != newState) {
-        log_i("State transition: %d → %d", static_cast<int>(state), static_cast<int>(newState));
+        logLightThread(LT_LOG_INFO,"State transition: %d → %d", static_cast<int>(state), static_cast<int>(newState));
         state = newState;
         stateEntryTime = millis();
         justEntered = true;  // <- Set on entry
@@ -81,7 +81,7 @@ void LightThread::processState() {
         case State::JOINER_SEEKING_LEADER:handleJoinerSeekingLeader();
 
         case State::ERROR:               handleError(); break;
-        default:                         log_w("Unknown state"); break;
+        default:                         logLightThread(LT_LOG_WARN,"Unknown state"); break;
     }
 }
 
@@ -89,7 +89,6 @@ void LightThread::processState() {
 void LightThread::handleInit() {
     if (justEntered) {
 	justEntered = false;
-        log_i("INIT: Entered initialization state.");
 		
 	if (!loadNetworkConfig()) {
 		setState(State::ERROR);
@@ -99,7 +98,7 @@ void LightThread::handleInit() {
 	String tmp;
         if (role == Role::LEADER) {
             // Setup the Thread network from scratch
-            log_i("LEADER detected. Bootstrapping network setup...");
+            logLightThread(LT_LOG_INFO,"LEADER detected. Bootstrapping network setup...");
 
             execAndMatch("dataset init new", "Done");
             execAndMatch("dataset channel " + String(configuredChannel), "Done");
@@ -114,11 +113,11 @@ void LightThread::handleInit() {
         } 
         else {
 	  if (loadLeaderInfo(leaderIp, tmp)) {
-	    log_i("INIT: Joiner has saved leader info: %s", leaderIp.c_str());
+	    logLightThread(LT_LOG_INFO,"INIT: Joiner has saved leader info: %s", leaderIp.c_str());
 	    setState(State::JOINER_RECONNECT);
 	  }
 	  else {
-	    log_i("INIT: No saved leader info, standby");
+	    logLightThread(LT_LOG_INFO,"INIT: No saved leader info, standby");
 	    setState(State::STANDBY);
 	  }
 	}
@@ -137,7 +136,7 @@ void LightThread::handleStandby() {
     unsigned long now = millis();
     for (auto it = joinerHeartbeatMap.begin(); it != joinerHeartbeatMap.end(); ) {
         if (now - it->second > 15000) {
-            log_w("STANDBY: Joiner %s timed out — removing from heartbeat map", it->first.c_str());
+            logLightThread(LT_LOG_WARN,"Joiner %s timed out — removing from heartbeat map", it->first.c_str());
             it = joinerHeartbeatMap.erase(it);
         } else {
             ++it;
@@ -158,20 +157,20 @@ void LightThread::handleButton() {
     if (isPressed && !buttonPressed) {
         buttonPressed = true;
         pressStart = millis();
-        log_d("Button press started");
+        logLightThread(LT_LOG_INFO,"Button press started");
 
     } else if (!isPressed && buttonPressed) {
         buttonPressed = false;
         unsigned long duration = millis() - pressStart;
 
         if (duration < 50) {
-            log_d("Ignored press (debounce)");
+            logLightThread(LT_LOG_INFO,"Ignored press (debounce)");
             return;
         }
 
         if (duration >= 3000) {
           // Long press = factory reset (for joiners only)
-            log_i("Long press");
+            logLightThread(LT_LOG_INFO,"Long press");
             if (role == Role::JOINER) {
                 clearPersistentState();
                 setState(State::STANDBY);
@@ -179,7 +178,7 @@ void LightThread::handleButton() {
         } 
         else {
             // Short press = trigger pairing
-            log_i("Short press");
+            logLightThread(LT_LOG_INFO,"Short press");
             if (state == State::STANDBY) {
                 setState(role == Role::LEADER ? State::COMMISSIONER_START : State::JOINER_START);
             }
@@ -210,7 +209,7 @@ void LightThread::updateLighting() {
         case State::INIT:                  set(255, 165, 0); break;        // orange
         case State::STANDBY:               set(0, 0, 255); break;          // blue
 		
-		case State::LEADER_WAIT_NETWORK:   blink(255, 165, 0); break; // orange blink
+	case State::LEADER_WAIT_NETWORK:   blink(255, 165, 0); break; // orange blink
 
         case State::COMMISSIONER_START:    blink(255, 60, 0); break;      // dark orange
         case State::COMMISSIONER_ACTIVE:   blink(0, 255, 0); break;        // blinking green

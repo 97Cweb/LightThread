@@ -15,7 +15,7 @@ void LightThread::handleNormalUdpMessage(const String& srcIp, const std::vector<
     if (ack == AckType::REQUEST) {
         reliable = true;
         if (payload.size() < 2) {
-            log_w("ExposedUDP: Reliable message too short for messageId");
+            logLightThread(LT_LOG_WARN,"ExposedUDP: Reliable message too short for messageId");
             return;
         }
         
@@ -31,14 +31,14 @@ void LightThread::handleNormalUdpMessage(const String& srcIp, const std::vector<
 
         // Send the ACK back to the source
         sendUdpPacket(AckType::RESPONSE, MessageType::NORMAL, ackPayload, srcIp, 12345);
-        log_i("ExposedUDP: Sent ACK for messageId %u to %s", messageId, srcIp.c_str());
+        logLightThread(LT_LOG_INFO,"ExposedUDP: Sent ACK for messageId %u to %s", messageId, srcIp.c_str());
     }
 
     // Forward the stripped payload to the registered UDP callback
     if (udpCallback) {
         udpCallback(srcIp, reliable, strippedPayload);
     } else {
-        log_w("ExposedUDP: No handler registered for NORMAL packets");
+        logLightThread(LT_LOG_WARN,"ExposedUDP: No handler registered for NORMAL packets");
     }
 }
 
@@ -46,7 +46,7 @@ void LightThread::handleNormalUdpMessage(const String& srcIp, const std::vector<
 // Registers a callback to receive parsed incoming UDP payloads (after stripping headers).
 void LightThread::registerUdpReceiveCallback(std::function<void(const String&, bool reliable, const std::vector<uint8_t>&)> fn) {
     udpCallback = fn;
-	log_i("ExposedUDP: UDP callback registered");
+	logLightThread(LT_LOG_INFO,"ExposedUDP: UDP callback registered");
 
 }
 
@@ -54,14 +54,14 @@ void LightThread::registerUdpReceiveCallback(std::function<void(const String&, b
 // Used in pairing flows.
 void LightThread::registerJoinCallback(std::function<void(const String& ip, const String& hashmac)> cb) {
     joinCallback = cb;
-    log_i("Join callback registered");
+    logLightThread(LT_LOG_INFO,"Join callback registered");
 }
 
 // Registers a callback that is invoked upon delivery success/failure
 // of a reliable UDP message.
 void LightThread::registerReliableUdpStatusCallback(std::function<void(uint16_t msgId, const String& ip, bool success)> cb) {
     reliableCallback = cb;
-    log_i("Reliable UDP status callback registered");
+    logLightThread(LT_LOG_INFO,"Reliable UDP status callback registered");
 }
 
 

@@ -51,6 +51,13 @@ enum MessageType {
     HEARTBEAT = 0x03
 };
 
+enum LightThreadLogLevel {
+    LT_LOG_VERBOSE,
+    LT_LOG_INFO,
+    LT_LOG_WARN,
+    LT_LOG_ERROR
+};
+
 class LightThread {
 public:
     LightThread();
@@ -200,6 +207,7 @@ private:
     // ------------------------
     bool convertHexToBytes(const String& hex, std::vector<uint8_t>& out);
     String convertBytesToHex(const uint8_t* data, size_t len);
+    void logLightThread(LightThreadLogLevel level, const char* fmt, ...);
 	
 	// ------------------------
 	// exposedUDP.cpp

@@ -7,7 +7,7 @@ void LightThread::handleLeaderWaitNetwork() {
 
     if (justEntered) {
 	justEntered = false;
-        log_i("LEADER_WAIT_NETWORK: Waiting for Thread network...");
+        logLightThread(LT_LOG_INFO,"LEADER_WAIT_NETWORK: Waiting for Thread network...");
         lastCheck = 0;  // Reset check timer
     }
 
@@ -18,7 +18,7 @@ void LightThread::handleLeaderWaitNetwork() {
     String response;
     if (execAndMatch("state", "", &response, 1000)) {
         if (response.indexOf("leader") != -1 || response.indexOf("router") != -1) {
-            log_i("LEADER_WAIT_NETWORK: Thread is up in state: %s", response.c_str());
+            logLightThread(LT_LOG_INFO,"LEADER_WAIT_NETWORK: Thread is up in state: %s", response.c_str());
 
             // Open UDP communication and bind to port 12345
             execAndMatch("udp open", "Done");
@@ -26,15 +26,15 @@ void LightThread::handleLeaderWaitNetwork() {
 
             setState(State::STANDBY);
         } else {
-            log_i("LEADER_WAIT_NETWORK: Not a leader yet");
+            logLightThread(LT_LOG_INFO,"LEADER_WAIT_NETWORK: Not a leader yet");
         }
     } else {
-        log_w("LEADER_WAIT_NETWORK: Failed to query state");
+        logLightThread(LT_LOG_WARN,"LEADER_WAIT_NETWORK: Failed to query state");
     }
 
     // Timeout if leader state isn't achieved in 50 seconds
     if (timeInState() > 50000) {
-        log_e("LEADER_WAIT_NETWORK: Timed out waiting for leader state");
+        logLightThread(LT_LOG_ERROR,"LEADER_WAIT_NETWORK: Timed out waiting for leader state");
         setState(State::ERROR);
     }
 }
@@ -51,7 +51,7 @@ void LightThread::handleCommissionerStart() {
 
     // Short delay before moving to broadcast phase
     if (timeInState() > 1000) {
-        log_i("COMMISSIONER_START: Setup complete. Transitioning to COMMISSIONER_ACTIVE");
+        logLightThread(LT_LOG_INFO,"COMMISSIONER_START: Setup complete. Transitioning to COMMISSIONER_ACTIVE");
         setState(State::COMMISSIONER_ACTIVE);
     }
 }
@@ -76,15 +76,15 @@ void LightThread::handleCommissionerActive() {
         );
 
         if (ok) {
-            log_i("COMMISSIONER_ACTIVE: Sent PAIR_REQUEST broadcast");
+            logLightThread(LT_LOG_INFO,"COMMISSIONER_ACTIVE: Sent PAIR_REQUEST broadcast");
         } else {
-            log_w("COMMISSIONER_ACTIVE: Failed to send PAIR_REQUEST");
+            logLightThread(LT_LOG_WARN,"COMMISSIONER_ACTIVE: Failed to send PAIR_REQUEST");
         }
     }
     
     // End commissioning after 60 seconds
     if (timeInState() > 60000) {
-      log_i("COMMISSIONER_ACTIVE: Pairing Timed out. Transitioning to STANDBY");
+      logLightThread(LT_LOG_INFO,"COMMISSIONER_ACTIVE: Pairing Timed out. Transitioning to STANDBY");
       execAndMatch("commissioner stop", "Done");
       setState(State::STANDBY);
     }

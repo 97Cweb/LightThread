@@ -33,3 +33,27 @@ String LightThread::getLeaderIp(){
     return leaderIp;
   }
 }
+
+void LightThread::logLightThread(LightThreadLogLevel level, const char* fmt, ...) {
+    char buffer[256];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
+    switch (level) {
+        case LT_LOG_VERBOSE:
+            log_v("[LightThread] %s", buffer);
+            break;
+        case LT_LOG_INFO:
+            log_i("[LightThread] %s", buffer);
+            break;
+        case LT_LOG_WARN:
+            log_w("[LightThread] %s", buffer);
+            break;
+        case LT_LOG_ERROR:
+            log_e("[LightThread] %s", buffer);
+            break;
+    }
+}
+

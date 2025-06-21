@@ -9,13 +9,13 @@
 //   - timeoutMs: Maximum time to wait for a matching response.
 // Returns true if the match string is found in time, false otherwise.
 bool LightThread::execAndMatch(const String& command, const String& mustContain, String* out, unsigned long timeoutMs) {
-    log_d("CLI: %s", command.c_str());
+    logLightThread(LT_LOG_INFO,"CLI: %s", command.c_str());
     // Send command to OpenThread CLI
     OThreadCLI.println(command);
     String response;
     // Wait for a response that includes the required substring
     if (!waitForString(response, timeoutMs, mustContain)) {
-        log_w("Command '%s' timed out", command.c_str());
+        logLightThread(LT_LOG_WARN,"Command '%s' timed out", command.c_str());
         return false;
     }
     // Store the full response if the caller requested it
@@ -27,7 +27,7 @@ bool LightThread::execAndMatch(const String& command, const String& mustContain,
 // loggs an unclaimed (non-parsed) CLI response.
 void LightThread::handleCliLine(const String& line) {
     // Optional: Add routing logic later if needed
-    log_d("CLI Response (unclaimed): %s", line.c_str());
+    logLightThread(LT_LOG_INFO,"CLI Response (unclaimed): %s", line.c_str());
 }
 
 // Waits for CLI output to include a specific match string.
@@ -50,7 +50,7 @@ bool LightThread::waitForString(String& responseBuffer, unsigned long timeoutMs,
         }
     }
 
-    log_w("Timeout while waiting for '%s'", matchStr.c_str());
+    logLightThread(LT_LOG_WARN,"Timeout while waiting for '%s'", matchStr.c_str());
     return false;
 }
 

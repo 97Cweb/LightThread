@@ -8,13 +8,13 @@
 // Returns true if config was loaded successfully.
 bool LightThread::loadNetworkConfig() {
     if (!SD.begin()) {
-        log_e("SD card mount failed");
+        logLightThread(LT_LOG_ERROR,"SD card mount failed");
         return false;
     }
 
     File configFile = SD.open("/config/network.json");
     if (!configFile) {
-        log_w("/config/network.json not found. Creating default.");
+        logLightThread(LT_LOG_WARN,"/config/network.json not found. Creating default.");
         createDefaultNetworkConfig();
         return false;
     }
@@ -35,13 +35,13 @@ bool LightThread::parseNetworkJson(const String& jsonStr) {
     StaticJsonDocument<512> doc;
     DeserializationError err = deserializeJson(doc, jsonStr);
     if (err) {
-        log_e("JSON parse error: %s", err.c_str());
+        logLightThread(LT_LOG_ERROR,"JSON parse error: %s", err.c_str());
         return false;
     }
 
     // Parse identity → role
     if (!doc.containsKey("identity") || !doc["identity"].containsKey("role")) {
-        log_e("Missing 'identity.role' in network.json");
+        logLightThread(LT_LOG_ERROR,"Missing 'identity.role' in network.json");
         return false;
     }
 
@@ -56,14 +56,14 @@ bool LightThread::parseNetworkJson(const String& jsonStr) {
         role = Role::JOINER;
         roleLoadedFromConfig = true;
     } else {
-        log_e("Invalid role '%s' in network.json", roleStr.c_str());
+        logLightThread(LT_LOG_ERROR,"Invalid role '%s' in network.json", roleStr.c_str());
         return false;
     }
 
     // Parse network details
     JsonObject network = doc["network"];
     if (!network.containsKey("channel") || !network.containsKey("meshlocalprefix") || !network.containsKey("panid")) {
-        log_e("Missing required network keys");
+        logLightThread(LT_LOG_ERROR,"Missing required network keys");
         return false;
     }
 
@@ -71,7 +71,7 @@ bool LightThread::parseNetworkJson(const String& jsonStr) {
     configuredPrefix = (const char*)network["meshlocalprefix"];
     configuredPanid = (const char*)network["panid"];
 
-    log_i("Config loaded: role=%s, channel=%d, prefix=%s, panid=%s",
+    logLightThread(LT_LOG_INFO,"Config loaded: role=%s, channel=%d, prefix=%s, panid=%s",
           roleStr.c_str(), configuredChannel, configuredPrefix.c_str(), configuredPanid.c_str());
 
     return true;
@@ -94,14 +94,14 @@ void LightThread::createDefaultNetworkConfig() {
 
     File file = SD.open("/config/network.json", FILE_WRITE);
     if (!file) {
-        log_e("Failed to create default /config/network.json");
+        logLightThread(LT_LOG_ERROR,"Failed to create default /config/network.json");
         return;
     }
 
     serializeJsonPretty(doc, file);
     file.close();
 
-    log_i("Default /network.json created");
+    logLightThread(LT_LOG_WARN,"Default /network.json created");
 }
 
 // Appends a new joiner to joiners.csv unless already known.
@@ -117,13 +117,13 @@ bool LightThread::addJoinerEntry(const String& ip, const String& hashmac) {
 
     File file = SD.open("/cache/joiners.csv", FILE_APPEND);
     if (!file) {
-        log_e("Failed to open joiners.csv for append");
+        logLightThread(LT_LOG_ERROR,"Failed to open joiners.csv for append");
         return false;
     }
 
     file.printf("%s,%s\n", ip.c_str(), hashmac.c_str());
     file.close();
-    log_i("Joiner added: %s [%s]", ip.c_str(), hashmac.c_str());
+    logLightThread(LT_LOG_INFO,"Joiner added: %s [%s]", ip.c_str(), hashmac.c_str());
     return true;
 }
 
@@ -166,7 +166,7 @@ bool LightThread::saveLeaderInfo(const String& ip, const String& hashmac) {
 
     File file = SD.open("/cache/leader.json", FILE_WRITE);
     if (!file) {
-        log_e("Failed to write leader.json");
+        logLightThread(LT_LOG_ERROR,"Failed to write leader.json");
         return false;
     }
 
@@ -194,7 +194,7 @@ bool LightThread::loadLeaderInfo(String& outIp, String& outHashmac) {
 // Removes all persistent config and joiner/leader tracking files.
 // Useful for full reset via long-press or factory wipe.
 void LightThread::clearPersistentState() {
-    log_w("WIPING all stored configuration");
+    logLightThread(LT_LOG_WARN,"WIPING all stored configuration");
 
     SD.remove("/config/network.json");
     SD.remove("/cache/joiners.csv");

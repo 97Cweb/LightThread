@@ -4,7 +4,7 @@
 void LightThread::handleJoinerStart() {
     if (justEntered) {
 	justEntered = false;
-        log_i("JOINER_START: initializing joiner...");
+        logLightThread(LT_LOG_INFO,"JOINER_START: initializing joiner...");
 
         setupJoinerDataset();           // Sets network parameters
         setupJoinerThreadDefaults();    // Configures thread options
@@ -14,7 +14,7 @@ void LightThread::handleJoinerStart() {
     // After a brief delay, start Thread stack
     if (timeInState() > 500) {
         execAndMatch("thread start", "Done");
-        log_i("JOINER_START: Thread start issued");
+        logLightThread(LT_LOG_INFO,"JOINER_START: Thread start issued");
         setState(State::JOINER_SCAN);
     }
 }
@@ -25,7 +25,7 @@ void LightThread::handleJoinerScan() {
 
     if (justEntered) {
 	justEntered = false;
-        log_i("JOINER_SCAN: checking joiner state...");
+        logLightThread(LT_LOG_INFO,"JOINER_SCAN: checking joiner state...");
         lastCheck = 0;
     }
 
@@ -34,14 +34,14 @@ void LightThread::handleJoinerScan() {
 
     String response;
     if (execAndMatch("joiner state", "", &response, 2000)) {
-        log_d("Joiner state response: %s", response.c_str());
+        logLightThread(LT_LOG_INFO,"Joiner state response: %s", response.c_str());
         if (response.indexOf("Join failed") == -1 &&
             (response.indexOf("success") != -1 || response.indexOf("Idle") != -1)) {
-            log_i("JOINER_SCAN: Joiner successfully paired");
+            logLightThread(LT_LOG_INFO,"JOINER_SCAN: Joiner successfully paired");
             setState(State::JOINER_WAIT_BROADCAST);
         }
     } else {
-        log_w("JOINER_SCAN: Failed to get joiner state");
+        logLightThread(LT_LOG_WARN,"JOINER_SCAN: Failed to get joiner state");
     }
 }
 
@@ -49,7 +49,7 @@ void LightThread::handleJoinerScan() {
 void LightThread::handleJoinerWaitBroadcast() {
     if (justEntered) {
 	justEntered = false;
-        log_i("JOINER_WAIT_BROADCAST: Listening for leader broadcast...");
+        logLightThread(LT_LOG_INFO,"JOINER_WAIT_BROADCAST: Listening for leader broadcast...");
     }
 
     if (!inState(State::JOINER_WAIT_BROADCAST)) return;
@@ -58,12 +58,12 @@ void LightThread::handleJoinerWaitBroadcast() {
     if (timeInState() % 5000 < 50) {
 	String stateResp;
 	execAndMatch("state", "", &stateResp, 500);
-	log_d("JOINER_WAIT_BROADCAST: current Thread state: %s", stateResp.c_str());
+	logLightThread(LT_LOG_INFO,"JOINER_WAIT_BROADCAST: current Thread state: %s", stateResp.c_str());
     }
 
     // Timeout fallback
     if (millis() - stateEntryTime > 20000) {
-        log_w("JOINER_WAIT_BROADCAST: Timed out waiting for broadcast.");
+        logLightThread(LT_LOG_WARN,"JOINER_WAIT_BROADCAST: Timed out waiting for broadcast.");
         setState(State::STANDBY);
         return;
     }
@@ -73,11 +73,11 @@ void LightThread::handleJoinerWaitBroadcast() {
 void LightThread::handleJoinerWaitAck() {
     if (justEntered) {
 	justEntered = false;
-        log_i("JOINER_WAIT_ACK: Waiting for PAIR_ACK...");
+        logLightThread(LT_LOG_INFO,"JOINER_WAIT_ACK: Waiting for PAIR_ACK...");
     }
 
     if (timeInState() > 10000) { // 10s timeout
-        log_w("JOINER_WAIT_ACK: Timed out waiting for ACK");
+        logLightThread(LT_LOG_WARN,"JOINER_WAIT_ACK: Timed out waiting for ACK");
         setState(State::STANDBY);
     }
 }
@@ -92,12 +92,12 @@ void LightThread::handleJoinerPaired() {
         justEntered = false;
         escalated = false;
         lastCheck = millis();  // time marker
-        log_i("JOINER_PAIRED: storing configuration and entering standby");
+        logLightThread(LT_LOG_INFO,"JOINER_PAIRED: storing configuration and entering standby");
 	if (joinCallback) {
 	  uint64_t myHash = generateMacHash();
 	  String hashStr = String((uint32_t)(myHash >> 32), HEX) + String((uint32_t)(myHash & 0xFFFFFFFF), HEX);
 	  joinCallback(leaderIp, hashStr);
-	  log_i("JOINER_PAIRED: Fired joinCallback with IP %s and hash %s", leaderIp.c_str(), hashStr.c_str());
+	  logLightThread(LT_LOG_INFO,"JOINER_PAIRED: Fired joinCallback with IP %s and hash %s", leaderIp.c_str(), hashStr.c_str());
 	}
 
     }
@@ -117,14 +117,14 @@ void LightThread::handleJoinerPaired() {
                     if (modeResp.indexOf("d") == -1) {
                         // Only switch if we're not already in 'd'
                         execAndMatch("mode rdn", "Done");
-                        log_i("JOINER_PAIRED: Escalated to rdn (Thread state: child)");
+                        logLightThread(LT_LOG_INFO,"JOINER_PAIRED: Escalated to rdn (Thread state: child)");
                     } else {
-                        log_d("JOINER_PAIRED: Already in rdn mode");
+                        logLightThread(LT_LOG_INFO,"JOINER_PAIRED: Already in rdn mode");
                     }
                 }
                 escalated = true;
             } else {
-                log_d("JOINER_PAIRED: Still waiting for child state: %s", stateResp.c_str());
+                logLightThread(LT_LOG_INFO,"JOINER_PAIRED: Still waiting for child state: %s", stateResp.c_str());
             }
         }
     }
@@ -138,7 +138,7 @@ void LightThread::handleJoinerReconnect() {
 
     if (justEntered) {
         justEntered = false;
-        log_i("JOINER_RECONNECT: bringing up stack for auto-heal");
+        logLightThread(LT_LOG_INFO,"JOINER_RECONNECT: bringing up stack for auto-heal");
 		
 	setupJoinerDataset();
 	setupJoinerThreadDefaults();
@@ -161,7 +161,7 @@ void LightThread::handleJoinerReconnect() {
         if (execAndMatch("state", "", &resp, 1000)) {
             resp.toLowerCase();
             if (resp.indexOf("child") != -1 || resp.indexOf("router") != -1) {
-                log_i("JOINER_RECONNECT: back in mesh as %s", resp.c_str());
+                logLightThread(LT_LOG_INFO,"JOINER_RECONNECT: back in mesh as %s", resp.c_str());
                 setState(State::JOINER_PAIRED);
                 return;
             }
@@ -170,7 +170,7 @@ void LightThread::handleJoinerReconnect() {
     
     // Timeout and fallback
     if (timeInState() > 120000) {
-        log_w("JOINER_RECONNECT: Timeout — going to standby");
+        logLightThread(LT_LOG_WARN,"JOINER_RECONNECT: Timeout — going to standby");
         setState(State::STANDBY);
     }
 
@@ -191,7 +191,7 @@ void LightThread::sendHeartbeatIfDue() {
 
     // No echo in 15s → assume leader is dead and trigger reconnect
     if ( millis() - lastHeartbeatEcho > 15000) {
-        log_w("HEARTBEAT: Leader not responding. Broadcasting reconnect.");
+        logLightThread(LT_LOG_WARN,"HEARTBEAT: Leader not responding. Broadcasting reconnect.");
 
         // Send RECONNECT request over multicast with own hashMAC
         uint64_t myHash = generateMacHash();
@@ -215,9 +215,9 @@ void LightThread::sendHeartbeatIfDue() {
 
     bool ok = sendUdpPacket(AckType::NONE, MessageType::HEARTBEAT, payload, leaderIp, 12345);
     if (ok) {
-        log_i("HEARTBEAT: Sent to leader");
+        logLightThread(LT_LOG_INFO,"HEARTBEAT: Sent to leader");
     } else {
-        log_w("HEARTBEAT: Failed to send");
+        logLightThread(LT_LOG_WARN,"HEARTBEAT: Failed to send");
     }
 }
 
@@ -241,7 +241,7 @@ void LightThread::setupJoinerThreadDefaults() {
     execAndMatch("routerdowngradethreshold 1", "Done");  // So it never tries to stick as router if it ever gets one
     execAndMatch("dataset commit active", "Done");
     execAndMatch("dataset active", "", &resp, 1000);
-    log_d("DATASET: %s", resp.c_str());
+    logLightThread(LT_LOG_INFO,"DATASET: %s", resp.c_str());
 
     execAndMatch("ifconfig up", "Done");
     execAndMatch("udp close", "Done");
