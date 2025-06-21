@@ -9,9 +9,11 @@ void LightThread::handleNormalUdpMessage(const String& srcIp, const std::vector<
     if (payload.empty()) return;
 
     std::vector<uint8_t> strippedPayload = payload;
+    bool reliable = false;
     
     // If it's a reliable message, extract message ID and send an ACK back
     if (ack == AckType::REQUEST) {
+        reliable = true;
         if (payload.size() < 2) {
             log_w("ExposedUDP: Reliable message too short for messageId");
             return;
@@ -34,7 +36,7 @@ void LightThread::handleNormalUdpMessage(const String& srcIp, const std::vector<
 
     // Forward the stripped payload to the registered UDP callback
     if (udpCallback) {
-        udpCallback(srcIp, strippedPayload);
+        udpCallback(srcIp, reliable, strippedPayload);
     } else {
         log_w("ExposedUDP: No handler registered for NORMAL packets");
     }
@@ -42,7 +44,7 @@ void LightThread::handleNormalUdpMessage(const String& srcIp, const std::vector<
 
 
 // Registers a callback to receive parsed incoming UDP payloads (after stripping headers).
-void LightThread::registerUdpReceiveCallback(std::function<void(const String&, const std::vector<uint8_t>&)> fn) {
+void LightThread::registerUdpReceiveCallback(std::function<void(const String&, bool reliable, const std::vector<uint8_t>&)> fn) {
     udpCallback = fn;
 	log_i("ExposedUDP: UDP callback registered");
 
