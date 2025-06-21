@@ -79,14 +79,13 @@ void LightThread::handleUdpLine(const String& line) {
 
 		String hashStr = String((uint32_t)(id >> 32), HEX) + String((uint32_t)(id & 0xFFFFFFFF), HEX);
 
-		addJoinerEntry(srcIp, hashStr);
 		logLightThread(LT_LOG_INFO,"COMMISSIONER_ACTIVE: Got joiner ID %016llx from %s — sending direct RESPONSE", id, srcIp.c_str());
 
 		uint64_t selfHash = generateMacHash();
 		std::vector<uint8_t> hashBytes;
-		for (int i = 7; i >= 0; --i)
-			hashBytes.push_back((selfHash >> (i * 8)) & 0xFF);
-
+		for (int i = 7; i >= 0; --i){
+		  hashBytes.push_back((selfHash >> (i * 8)) & 0xFF);
+                }
 		sendUdpPacket(AckType::RESPONSE, MessageType::PAIRING, hashBytes, srcIp, 12345);
 
 		logLightThread(LT_LOG_INFO,"COMMISSIONER_ACTIVE: Pairing complete, exiting commissioning");

@@ -88,29 +88,6 @@ bool LightThread::sendUdp(const String& destIp, bool reliable, const std::vector
     return sendUdpPacket(AckType::REQUEST, MessageType::NORMAL, userPayload, destIp, 12345,msgId);
 }
 
-// Reads the joiners.csv file and returns a map of IP → hashMAC.
-// Used by Beeton to populate thing-IP mappings.
-std::map<String, String> LightThread::getKnownJoiners() {
-    std::map<String, String> joiners;
-    File file = SD.open("/cache/joiners.csv");
-    if (!file) return joiners;
-
-    while (file.available()) {
-        String line = file.readStringUntil('\n');
-        int commaIndex = line.indexOf(',');
-        if (commaIndex == -1) continue;
-
-        String ip = line.substring(0, commaIndex);
-        String hash = line.substring(commaIndex + 1);
-        ip.trim(); hash.trim();
-        if (!ip.isEmpty() && !hash.isEmpty()) {
-            joiners[ip] = hash;
-        }
-    }
-
-    file.close();
-    return joiners;
-} 
 
 // Returns the last time (in millis) a heartbeat was received from the given IP.
 // Used to detect lost joiners.

@@ -76,10 +76,8 @@ public:
 	void registerReliableUdpStatusCallback(std::function<void(uint16_t msgId, const String& ip, bool success)> cb);
 	void registerJoinCallback(std::function<void(const String& ip, const String& hashmac)> cb);
 
-
 	bool sendUdp(const String& destIp, bool reliable, const std::vector<uint8_t>& payload);
-	std::map<String, String> getKnownJoiners();
-	unsigned long getLastEchoTime(const String& ip);
+	unsigned long getLastEcho(const String& ip);
 	bool isReady() const;
 	Role getRole() const { return role; }
 	String getLeaderIp();
@@ -173,11 +171,9 @@ private:
     bool loadNetworkConfig();
     bool parseNetworkJson(const String& jsonStr);
     void createDefaultNetworkConfig();
-	bool addJoinerEntry(const String& ip, const String& hashmac);
-	bool isJoinerKnown(const String& hashmac);
-	bool saveLeaderInfo(const String& ip, const String& hashmac);
-	bool loadLeaderInfo(String& outIp, String& outHashmac);
-	void clearPersistentState();
+    bool saveLeaderInfo(const String& ip, const String& hashmac);
+    bool loadLeaderInfo(String& outIp, String& outHashmac);
+    void clearPersistentState();
 
 
 
@@ -209,12 +205,12 @@ private:
     String convertBytesToHex(const uint8_t* data, size_t len);
     void logLightThread(LightThreadLogLevel level, const char* fmt, ...);
 	
-	// ------------------------
-	// exposedUDP.cpp
-	// ------------------------
-	// Exposed UDP (public-facing interface)
-	void handleNormalUdpMessage(const String& srcIp, const std::vector<uint8_t>& payload, AckType ack);
-
+    // ------------------------
+    // exposedUDP.cpp
+    // ------------------------
+    // Exposed UDP (public-facing interface)
+    void handleNormalUdpMessage(const String& srcIp, const std::vector<uint8_t>& payload, AckType ack);
+    
 
 };
 

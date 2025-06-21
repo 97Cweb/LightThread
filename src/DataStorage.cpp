@@ -12,9 +12,9 @@ bool LightThread::loadNetworkConfig() {
         return false;
     }
 
-    File configFile = SD.open("/config/network.json");
+    File configFile = SD.open("/LightThread/network.json");
     if (!configFile) {
-        logLightThread(LT_LOG_WARN,"/config/network.json not found. Creating default.");
+        logLightThread(LT_LOG_WARN,"/LightThread/network.json not found. Creating default.");
         createDefaultNetworkConfig();
         return false;
     }
@@ -77,10 +77,10 @@ bool LightThread::parseNetworkJson(const String& jsonStr) {
     return true;
 }
 
-// Creates a default /config/network.json with joiner role and safe defaults.
+// Creates a default /LightThread/network.json with joiner role and safe defaults.
 void LightThread::createDefaultNetworkConfig() {
-    if (!SD.exists("/config")) {
-        SD.mkdir("/config");
+    if (!SD.exists("/LightThread")) {
+        SD.mkdir("/LightThread");
     }
 
     StaticJsonDocument<512> doc;
@@ -92,9 +92,9 @@ void LightThread::createDefaultNetworkConfig() {
     network["meshlocalprefix"] = "fd00::";
     network["panid"] = "0x1234";
 
-    File file = SD.open("/config/network.json", FILE_WRITE);
+    File file = SD.open("/LightThread/network.json", FILE_WRITE);
     if (!file) {
-        logLightThread(LT_LOG_ERROR,"Failed to create default /config/network.json");
+        logLightThread(LT_LOG_ERROR,"Failed to create default /LightThread/network.json");
         return;
     }
 
@@ -104,67 +104,21 @@ void LightThread::createDefaultNetworkConfig() {
     logLightThread(LT_LOG_WARN,"Default /network.json created");
 }
 
-// Appends a new joiner to joiners.csv unless already known.
-// Returns true on success.
-bool LightThread::addJoinerEntry(const String& ip, const String& hashmac) {
-    if (!SD.begin()) return false;
-
-    if (!SD.exists("/cache")) {
-        SD.mkdir("/cache");
-    }
-
-    if (isJoinerKnown(hashmac)) return true;
-
-    File file = SD.open("/cache/joiners.csv", FILE_APPEND);
-    if (!file) {
-        logLightThread(LT_LOG_ERROR,"Failed to open joiners.csv for append");
-        return false;
-    }
-
-    file.printf("%s,%s\n", ip.c_str(), hashmac.c_str());
-    file.close();
-    logLightThread(LT_LOG_INFO,"Joiner added: %s [%s]", ip.c_str(), hashmac.c_str());
-    return true;
-}
-
-// Checks joiners.csv for an existing entry matching hashmac.
-// Returns true if found.
-bool LightThread::isJoinerKnown(const String& hashmac) {
-    File file = SD.open("/cache/joiners.csv");
-    if (!file) return false;
-
-    while (file.available()) {
-        String line = file.readStringUntil('\n');
-        int commaIndex = line.indexOf(',');
-        if (commaIndex == -1) continue;
-
-        String existingHash = line.substring(commaIndex + 1);
-        existingHash.trim();
-
-        if (existingHash == hashmac) {
-            file.close();
-            return true;
-        }
-    }
-
-    file.close();
-    return false;
-}
 
 // Writes the current leader IP and hashmac to leader.json.
 // Used by joiners to store their commissioner.
 bool LightThread::saveLeaderInfo(const String& ip, const String& hashmac) {
     if (!SD.begin()) return false;
 
-    if (!SD.exists("/cache")) {
-        SD.mkdir("/cache");
+    if (!SD.exists("/LightThread")) {
+        SD.mkdir("/LightThread");
     }
 
     StaticJsonDocument<256> doc;
     doc["leader_ip"] = ip;
     doc["leader_hash"] = hashmac;
 
-    File file = SD.open("/cache/leader.json", FILE_WRITE);
+    File file = SD.open("/LightThread/leader.json", FILE_WRITE);
     if (!file) {
         logLightThread(LT_LOG_ERROR,"Failed to write leader.json");
         return false;
@@ -178,7 +132,7 @@ bool LightThread::saveLeaderInfo(const String& ip, const String& hashmac) {
 // Reads stored leader info back into out parameters.
 // Returns false if not found or parse error.
 bool LightThread::loadLeaderInfo(String& outIp, String& outHashmac) {
-    File file = SD.open("/cache/leader.json");
+    File file = SD.open("/LightThread/leader.json");
     if (!file) return false;
 
     StaticJsonDocument<256> doc;
@@ -196,9 +150,8 @@ bool LightThread::loadLeaderInfo(String& outIp, String& outHashmac) {
 void LightThread::clearPersistentState() {
     logLightThread(LT_LOG_WARN,"WIPING all stored configuration");
 
-    SD.remove("/config/network.json");
-    SD.remove("/cache/joiners.csv");
-    SD.remove("/cache/leader.json");
+    SD.remove("/LightThread/network.json");
+    SD.remove("/LightThread/leader.json");
 
     createDefaultNetworkConfig();  // recreate fresh network.json
 }
