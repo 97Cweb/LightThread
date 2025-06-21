@@ -75,6 +75,7 @@ public:
 	unsigned long getLastEchoTime(const String& ip);
 	bool isReady() const;
 	Role getRole() const { return role; }
+	String getLeaderIp();
 	
 	
 	
@@ -88,7 +89,7 @@ private:
     unsigned long stateEntryTime = 0;
     bool justEntered = true;
     uint8_t buttonPin;
-	String leaderIp = "";  // Joiner: IP of the leader to reconnect to
+    String leaderIp = "";  // Joiner: IP of the leader to reconnect to
 
     // Data loaded from /network.json (DataStorage.cpp)
     int configuredChannel = -1;

@@ -24,3 +24,12 @@ bool LightThread::convertHexToBytes(const String& hexStr, std::vector<uint8_t>& 
     }
     return true;
 }
+
+String LightThread::getLeaderIp(){
+  if(getRole() == Role::LEADER){
+    return "";
+  }
+  else if (getRole() == Role::JOINER){
+    return leaderIp;
+  }
+}
