@@ -77,7 +77,7 @@ public:
 	void registerJoinCallback(std::function<void(const String& ip, const String& hashmac)> cb);
 
 	bool sendUdp(const String& destIp, bool reliable, const std::vector<uint8_t>& payload);
-	unsigned long getLastEcho(const String& ip);
+	unsigned long getLastEchoTime(const String& ip);
 	bool isReady() const;
 	Role getRole() const { return role; }
 	String getLeaderIp();
@@ -101,28 +101,28 @@ private:
     String configuredPrefix = "";
     String configuredPanid = "";
 	
-	// Heartbeat tracking (Joiner)
-	unsigned long lastHeartbeatSent = 0;
-	unsigned long lastHeartbeatEcho = 0;
+    // Heartbeat tracking (Joiner)
+    unsigned long lastHeartbeatSent = 0;
+    unsigned long lastHeartbeatEcho = 0;
 
-	// Heartbeat tracking (Leader)
-	std::map<String, unsigned long> joinerHeartbeatMap;
+    // Heartbeat tracking (Leader)
+    std::map<String, unsigned long> joinerHeartbeatMap;
 
-	
-	uint16_t nextMessageId = 0;
 
-	struct PendingReliableUdp {
-		String destIp;
-		std::vector<uint8_t> payload;  // Includes messageId prepended
-		unsigned long timeSent;
-		uint8_t retryCount;
-	};
+    uint16_t nextMessageId = 0;
 
-	std::map<uint16_t, PendingReliableUdp> pendingReliableMessages;
-	
-	std::function<void(uint16_t, const String&, bool)> reliableCallback = nullptr;
-	std::function<void(const String& srcIp, bool reliable, const std::vector<uint8_t>& payload)> udpCallback = nullptr;
-	std::function<void(const String&, const String&)> joinCallback = nullptr;
+    struct PendingReliableUdp {
+	    String destIp;
+	    std::vector<uint8_t> payload;  // Includes messageId prepended
+	    unsigned long timeSent;
+	    uint8_t retryCount;
+    };
+
+    std::map<uint16_t, PendingReliableUdp> pendingReliableMessages;
+
+    std::function<void(uint16_t, const String&, bool)> reliableCallback = nullptr;
+    std::function<void(const String& srcIp, bool reliable, const std::vector<uint8_t>& payload)> udpCallback = nullptr;
+    std::function<void(const String&, const String&)> joinCallback = nullptr;
 
 
 

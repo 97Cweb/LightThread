@@ -159,7 +159,12 @@ void LightThread::handleUdpLine(const String& line) {
 		String hashStr = String((uint32_t)(id >> 32), HEX) + String((uint32_t)(id & 0xFFFFFFFF), HEX);
 		
 		unsigned long now = millis();
-		unsigned long lastSeen = joinerHeartbeatMap.count(srcIp) ? joinerHeartbeatMap[srcIp] : 0;
+		unsigned long lastSeen;
+                if (joinerHeartbeatMap.count(srcIp)) {
+                    lastSeen = joinerHeartbeatMap[srcIp];
+                } else {
+                    lastSeen = 0;
+                }
 		joinerHeartbeatMap[srcIp] = now;
 
 		logLightThread(LT_LOG_INFO,"HEARTBEAT: Joiner %s [%s] is alive", srcIp.c_str(), hashStr.c_str());
