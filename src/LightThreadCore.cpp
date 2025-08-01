@@ -8,7 +8,8 @@ LightThread::LightThread() : buttonPin(BUTTON_PIN), state(State::INIT) {
 // Begin routine: initializes CLI, resets state machine
 void LightThread::begin() {
     logLightThread(LT_LOG_INFO, "LightThread begin()");
-    OThreadCLI.begin(false);    // Start CLI interface (non-blocking)
+    OThread.begin(false);    // Start CLI interface (non-blocking)
+    OThreadCLI.begin();
     OThreadCLI.setTimeout(250); // Set CLI read timeout
     setState(State::INIT);      // Enter INIT state
 }
