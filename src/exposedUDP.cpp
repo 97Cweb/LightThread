@@ -104,3 +104,19 @@ bool LightThread::isReady() const {
         return state == State::JOINER_PAIRED;
     return false;
 }
+
+String LightThread::getMyIp() {
+    String response;
+    if (execAndMatch("ipaddr mleid", "Done", &response)) {
+        // The CLI output will look like:
+        // "fd00:db8:abcd::1234\nDone"
+        // Let's strip the trailing "Done" and whitespace
+        int end = response.indexOf("Done");
+        if (end > 0) response = response.substring(0, end);
+        response.trim();
+        return response;
+    } else {
+        return "";
+    }
+}
+

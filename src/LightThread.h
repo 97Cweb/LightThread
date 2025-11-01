@@ -62,6 +62,7 @@ class LightThread {
     unsigned long getLastEchoTime(const String &ip);
     bool isReady() const;
     Role getRole() const { return role; }
+    String getMyIp();
     String getLeaderIp();
 
   private:
