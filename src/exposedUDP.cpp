@@ -5,43 +5,51 @@
 // Handles incoming UDP message of type NORMAL.
 // If the message is marked as reliable (AckType::REQUEST), an ACK is sent.
 // Otherwise, it calls the registered UDP callback.
-void LightThread::handleNormalUdpMessage(const String &srcIp, const std::vector<uint8_t> &payload,
+void LightThread::handleNormalUdpMessage(const String &srcIp,
+                                         const std::vector<uint8_t> &payload,
                                          AckType ack) {
-    if(payload.empty())
-        return;
+    if (payload.empty()) return;
 
-    std::vector<uint8_t> strippedPayload = payload;
-    bool reliable = false;
+    bool reliable = (ack == AckType::REQUEST);
 
-    // If it's a reliable message, extract message ID and send an ACK back
-    if(ack == AckType::REQUEST) {
-        reliable = true;
-        if(payload.size() < 2) {
+    // Non-reliable: payload already IS the app payload (e.g., Beeton packet)
+    // Reliable: payload begins with 2-byte messageId followed by app payload
+    const std::vector<uint8_t>* forwarded = &payload;
+    std::vector<uint8_t> strippedPayload;
+
+    if (reliable) {
+        if (payload.size() < 2) {
             logLightThread(LT_LOG_WARN, "ExposedUDP: Reliable message too short for messageId");
             return;
         }
 
-        // Extract the message ID (big-endian)
-        uint16_t messageId = (payload[0] << 8) | payload[1];
-        strippedPayload.erase(strippedPayload.begin(), strippedPayload.begin() + 2);
+        // Here messageId is at payload[0..1] because ack/type were already stripped
+        uint16_t messageId = (static_cast<uint16_t>(payload[0]) << 8) | payload[1];
 
-        // Create an ACK payload to respond
-        std::vector<uint8_t> ackPayload = {static_cast<uint8_t>((messageId >> 8) & 0xFF),
-                                           static_cast<uint8_t>(messageId & 0xFF)};
+        std::vector<uint8_t> ackPayload = {
+            static_cast<uint8_t>((messageId >> 8) & 0xFF),
+            static_cast<uint8_t>(messageId & 0xFF)
+        };
 
-        // Send the ACK back to the source
-        sendUdpPacket(AckType::RESPONSE, MessageType::NORMAL, ackPayload, srcIp, 12345);
-        logLightThread(LT_LOG_INFO, "ExposedUDP: Sent ACK for messageId %u to %s", messageId,
-                       srcIp.c_str());
+        sendUdpPacket(AckType::RESPONSE, MessageType::NORMAL,
+                      ackPayload, srcIp, 12345);
+
+        logLightThread(LT_LOG_INFO, "ExposedUDP: Sent ACK for messageId %u to %s",
+                       messageId, srcIp.c_str());
+
+        // Strip messageId before forwarding to app
+        strippedPayload.assign(payload.begin() + 2, payload.end());
+        forwarded = &strippedPayload;
     }
 
-    // Forward the stripped payload to the registered UDP callback
-    if(udpCallback) {
-        udpCallback(srcIp, reliable, strippedPayload);
+
+    if (udpCallback) {
+        udpCallback(srcIp, reliable, *forwarded);
     } else {
         logLightThread(LT_LOG_WARN, "ExposedUDP: No handler registered for NORMAL packets");
     }
 }
+
 
 // Registers a callback to receive parsed incoming UDP payloads (after stripping headers).
 void LightThread::registerUdpReceiveCallback(
