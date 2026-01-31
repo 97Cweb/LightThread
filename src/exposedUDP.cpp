@@ -10,6 +10,7 @@ void LightThread::handleNormalUdpMessage(const String &srcIp,
                                          AckType ack) {
     if (payload.empty()) return;
 
+    if(ack == AckType::RESPONSE) return;
     bool reliable = (ack == AckType::REQUEST);
 
     // Non-reliable: payload already IS the app payload (e.g., Beeton packet)
