@@ -201,7 +201,7 @@ void LightThread::sendHeartbeatIfDue() {
         for(int i = 7; i >= 0; --i)
             payload.push_back((myHash >> (i * 8)) & 0xFF);
 
-        sendUdpPacket(AckType::REQUEST, MessageType::RECONNECT, payload, "ff03::1", 12345);
+        sendUdpPacket(MessageType::RECONNECT_REQUEST, payload, "ff03::1", 12345);
         lastHeartbeatSent = millis(); // Rate-limit retries
         setState(State::JOINER_SEEKING_LEADER);
         return;
@@ -215,7 +215,7 @@ void LightThread::sendHeartbeatIfDue() {
     for(int i = 7; i >= 0; --i)
         payload.push_back((id >> (i * 8)) & 0xFF);
 
-    bool ok = sendUdpPacket(AckType::NONE, MessageType::HEARTBEAT, payload, leaderIp, 12345);
+    bool ok = sendUdpPacket(MessageType::HEARTBEAT, payload, leaderIp, 12345);
     if(ok) {
         logLightThread(LT_LOG_INFO, "HEARTBEAT: Sent to leader");
     } else {

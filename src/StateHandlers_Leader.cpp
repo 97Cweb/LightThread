@@ -70,7 +70,7 @@ void LightThread::handleCommissionerActive() {
         lastBroadcast = millis();
 
         std::vector<uint8_t> emptyPayload;
-        bool ok = sendUdpPacket(AckType::NONE, MessageType::PAIRING, emptyPayload,
+        bool ok = sendUdpPacket(MessageType::PAIRING_BROADCAST, emptyPayload,
                                 "ff03::1", // multicast all nodes
                                 12345);
 

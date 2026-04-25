@@ -17,28 +17,11 @@ void LightThread::begin() {
 // Main loop update: handles input and state transitions
 void LightThread::update() {
     handleButton(); // Check for button presses
+    
+    readCliSerial();
     processState(); // Call the handler for current state
-
-    String cliBuffer;
-    String udpLine;
-    bool isUDP;
-
-    // Read characters from CLI and process full lines
-    while(OThreadCLI.available()) {
-        char c = OThreadCLI.read();
-
-        if(processCLIChar(c, cliBuffer, isUDP, udpLine)) {
-            if(isUDP) {
-                handleUdpLine(udpLine); // Handle incoming UDP
-            } else {
-                handleCliLine(cliBuffer); // Handle CLI output
-                cliBuffer = "";           // Clear buffer
-            }
-        }
-    }
-
+    updateCliCommand();
     updateLighting();    // Update RGB LED
-    updateReliableUdp(); // Retry pending reliable messages
 }
 
 // Sets the current FSM state and resets its entry timer
@@ -98,6 +81,7 @@ void LightThread::processState() {
         break;
     case State::JOINER_SEEKING_LEADER:
         handleJoinerSeekingLeader();
+        break;
 
     case State::ERROR:
         handleError();

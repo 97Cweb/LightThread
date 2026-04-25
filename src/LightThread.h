@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include <OThreadCLI.h> // must include full header
-#include <optional>
 
 #define BUTTON_PIN 9
 #include <map>
@@ -32,9 +31,7 @@ enum class State {
     ERROR
 };
 
-enum AckType { NONE = 0x00, REQUEST = 0x99, RESPONSE = 0x98 };
-
-enum MessageType { NORMAL = 0x00, PAIRING = 0x01, RECONNECT = 0x02, HEARTBEAT = 0x03 };
+enum MessageType { NORMAL = 0x00, PAIRING_BROADCAST = 0x01, PAIRING_REQUEST = 0x02, PAIRING_RESPONSE = 0x03, RECONNECT_REQUEST = 0x04, RECONNECT_RESPONSE = 0x05, HEARTBEAT = 0x06, HEARTBEAT_ECHO = 0x07 };
 
 enum LightThreadLogLevel { LT_LOG_VERBOSE, LT_LOG_INFO, LT_LOG_WARN, LT_LOG_ERROR };
 
@@ -53,12 +50,10 @@ class LightThread {
     // ------------------------
     // Exposed UDP (public-facing interface)
     void registerUdpReceiveCallback(
-        std::function<void(const String &, bool reliable, const std::vector<uint8_t> &)> fn);
-    void registerReliableUdpStatusCallback(
-        std::function<void(uint16_t msgId, const String &ip, bool success)> cb);
+        std::function<void(const String &, const std::vector<uint8_t> &)> fn);
     void registerJoinCallback(std::function<void(const String &ip, const String &hashmac)> cb);
 
-    bool sendUdp(const String &destIp, bool reliable, const std::vector<uint8_t> &payload);
+    bool sendUdp(const String &destIp, const std::vector<uint8_t> &payload);
     unsigned long getLastEchoTime(const String &ip);
     bool isReady() const;
     Role getRole() const { return role; }
@@ -77,6 +72,26 @@ class LightThread {
     uint8_t buttonPin;
     String leaderIp = ""; // Joiner: IP of the leader to reconnect to
 
+
+    //non blocking cli variables
+    String pendingCliCommand;
+    String pendingCliExpected;
+    String pendingCliResponse;
+    bool cliBusy = false;
+    bool cliDone = false;
+    bool cliFailed = false;
+    unsigned long cliCommandStart = 0;
+    unsigned long cliCommandTimeout = 1000;
+
+
+    
+    bool startCliCommand(const String& command, const String& expected, unsigned long timeoutMs = 1000);
+    void updateCliCommand();
+    bool cliCommandDone();
+    bool cliCommandFailed();
+    String getCliResponse();
+
+
     // Data loaded from /network.json (DataStorage.cpp)
     int configuredChannel = -1;
     String configuredPrefix = "";
@@ -88,22 +103,10 @@ class LightThread {
 
     // Heartbeat tracking (Leader)
     std::map<String, unsigned long> joinerHeartbeatMap;
-
-    uint16_t nextMessageId = 0;
-
-    struct PendingReliableUdp {
-        String destIp;
-        std::vector<uint8_t> payload; // Includes messageId prepended
-        unsigned long timeSent;
-        uint8_t retryCount;
-    };
-
-    std::map<uint16_t, PendingReliableUdp> pendingReliableMessages;
-
-    std::function<void(uint16_t, const String &, bool)> reliableCallback = nullptr;
-    std::function<void(const String &srcIp, bool reliable, const std::vector<uint8_t> &payload)>
-        udpCallback = nullptr;
+    std::function<void(const String &srcIp, const std::vector<uint8_t> &payload)>udpCallback = nullptr;
     std::function<void(const String &, const String &)> joinCallback = nullptr;
+
+
 
     // ------------------------
     // LightThreadCore.cpp
@@ -154,31 +157,20 @@ class LightThread {
     // ------------------------
     // CLI.cpp
     // ------------------------
-    bool execAndMatch(const String &command, const String &mustContain = "", String *out = nullptr,
-                      unsigned long timeoutMs = 1000);
-    bool otGetResp(String &lineOut, bool &isUDP, unsigned long timeoutMs = 100);
-    bool waitForString(String &responseBuffer, unsigned long timeoutMs,
-                       const String &matchStr = "Done");
+    void readCliSerial();
     void handleCliLine(const String &line);
-    bool processCLIChar(char c, String &multiline, bool &isUDP, String &lineOut);
+    bool processCLI(char c, String &multiline, bool &isUDP, String &lineOut, String &srcIpOut);
 
     // ------------------------
     // UDPComm.cpp
     // ------------------------
-    void handleUdpLine(const String &line);
-    bool sendUdpPacket(AckType ack, MessageType type, const uint8_t *payload, size_t length,
-                       const String &destIp, uint16_t destPort,
-                       std::optional<uint16_t> messageId = std::nullopt);
-    bool sendUdpPacket(AckType ack, MessageType type, const std::vector<uint8_t> &payload,
-                       const String &destIp, uint16_t destPort,
-                       std::optional<uint16_t> messageId = std::nullopt);
-    String extractUdpSourceIp(const String &line);
-    uint16_t packMessage(AckType ack, MessageType type);
-    void unpackMessage(uint16_t raw, AckType &ack, MessageType &type);
-    bool parseIncomingPayload(const String &hex, AckType &ack, MessageType &type,
-                              std::vector<uint8_t> &payloadOut);
+    void handleUdpLine(const String &line, const String & srcIp);
+    bool sendUdpPacket(MessageType type, const uint8_t *payload, size_t length,
+                       const String &destIp, uint16_t destPort);
+    bool sendUdpPacket(MessageType type, const std::vector<uint8_t> &payload,
+                       const String &destIp, uint16_t destPort);
+    bool parseIncomingPayload(const String &hex,  MessageType &type, std::vector<uint8_t> &payloadOut);
     uint64_t generateMacHash();
-    void updateReliableUdp();
     // ------------------------
     // Utils.cpp
     // ------------------------
@@ -190,8 +182,7 @@ class LightThread {
     // exposedUDP.cpp
     // ------------------------
     // Exposed UDP (public-facing interface)
-    void handleNormalUdpMessage(const String &srcIp, const std::vector<uint8_t> &payload,
-                                AckType ack);
+    void handleNormalUdpMessage(const String &srcIp, const std::vector<uint8_t> &payload);
 };
 
 #endif // LIGHTTHREAD_H
