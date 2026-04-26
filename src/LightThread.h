@@ -27,6 +27,7 @@ enum class State {
     LEADER_WAIT_NETWORK,
     COMMISSIONER_START,
     COMMISSIONER_ACTIVE,
+    COMMISSIONER_STOPPING,
 
     ERROR
 };
@@ -71,6 +72,7 @@ class LightThread {
     bool justEntered = true;
     uint8_t buttonPin;
     String leaderIp = ""; // Joiner: IP of the leader to reconnect to
+    String myIp = "";
 
 
     //non blocking cli variables
@@ -128,6 +130,7 @@ class LightThread {
     void handleLeaderWaitNetwork();
     void handleCommissionerStart();
     void handleCommissionerActive();
+    void handleCommissionerStopping();
 
     // ------------------------
     // StateHandlers_Joiner.cpp
@@ -141,8 +144,6 @@ class LightThread {
     void handleJoinerSeekingLeader();
 
     void sendHeartbeatIfDue();
-    void setupJoinerDataset();
-    void setupJoinerThreadDefaults();
 
     // ------------------------
     // DataStorage.cpp
@@ -171,6 +172,7 @@ class LightThread {
                        const String &destIp, uint16_t destPort);
     bool parseIncomingPayload(const String &hex,  MessageType &type, std::vector<uint8_t> &payloadOut);
     uint64_t generateMacHash();
+    void captureMyIpFromResponse(const String &response);
     // ------------------------
     // Utils.cpp
     // ------------------------

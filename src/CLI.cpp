@@ -25,7 +25,24 @@ void LightThread::readCliSerial() {
 // Handles a single line of CLI output.
 // logs an unclaimed (non-parsed) CLI response.
 void LightThread::handleCliLine(const String &line) {
-    // Optional: Add routing logic later if needed
+
+    if(cliBusy){
+        pendingCliResponse += line;
+
+        if(pendingCliExpected.length() == 0 || 
+            pendingCliResponse.indexOf(pendingCliExpected) != -1){
+            cliBusy = false;
+            cliDone = true;
+
+            logLightThread(
+                LT_LOG_INFO,
+                "CLI matched '%s' for command: %s",
+                pendingCliExpected.c_str(),
+                pendingCliCommand.c_str()
+            );
+        }
+        return;
+    }
     logLightThread(LT_LOG_INFO, "CLI Response (unclaimed): %s", line.c_str());
 }
 
@@ -77,3 +94,49 @@ bool LightThread::processCLI(char c, String &multiline, bool &isUDP, String &lin
     return false;
 }
 
+
+bool LightThread::startCliCommand(const String& command, 
+                                    const String& expected,
+                                    unsigned long timeoutMs ){
+    if (cliBusy){
+        return false;
+    }
+    pendingCliCommand = command;
+    pendingCliExpected = expected;
+    pendingCliResponse = "";
+
+    cliBusy = true;
+    cliDone = false;
+    cliFailed = false;
+
+    cliCommandStart = millis();
+    cliCommandTimeout = timeoutMs;
+
+    logLightThread(LT_LOG_INFO, "CLI CMD: %s", command.c_str());
+    OThreadCLI.println(command);
+
+    return true;
+}
+
+void LightThread::updateCliCommand(){
+    if(!cliBusy) return;
+
+    if(millis() - cliCommandStart >= cliCommandTimeout){
+        cliBusy = false;
+        cliFailed = true;
+
+        logLightThread(LT_LOG_WARN, "CLI timeout: %s", pendingCliCommand.c_str());
+    }
+}
+
+bool LightThread::cliCommandDone(){
+    return cliDone;
+}
+
+bool LightThread::cliCommandFailed(){
+    return cliFailed;
+}
+
+String LightThread::getCliResponse(){
+    return pendingCliResponse;
+}

@@ -262,3 +262,21 @@ bool LightThread::sendUdpPacket(MessageType type, const uint8_t *payload,
     return true;
 }
 
+void LightThread::captureMyIpFromResponse(const String &response) {
+    int start = response.indexOf("fd");
+    if(start == -1) start = response.indexOf("fe80");
+
+    if(start == -1) {
+        logLightThread(LT_LOG_WARN, "Could not parse MLEID from response: %s", response.c_str());
+        return;
+    }
+
+    int end = response.indexOf('\n', start);
+    if(end == -1) end = response.length();
+
+    myIp = response.substring(start, end);
+    myIp.trim();
+
+    logLightThread(LT_LOG_INFO, "Captured my IP: %s", myIp.c_str());
+}
+
