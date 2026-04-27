@@ -202,18 +202,6 @@ void LightThread::handleUdpLine(const String &line) {
     }
 
     else if(msg == MessageType::NORMAL) {
-        // Handle ACK first
-        if(ack == AckType::RESPONSE && payload.size() >= 2) {
-            uint16_t ackedId = (payload[0] << 8) | payload[1];
-            if(pendingReliableMessages.erase(ackedId)) {
-                if(reliableCallback)
-                    reliableCallback(ackedId, srcIp, true);
-                logLightThread(LT_LOG_INFO, "ReliableUDP: ACK received for msgId %u", ackedId);
-            } else {
-                logLightThread(LT_LOG_WARN, "ReliableUDP: Unexpected ACK for msgId %u", ackedId);
-            }
-        }
-
         handleNormalUdpMessage(srcIp, payload, ack);
     }
 }
@@ -275,7 +263,6 @@ bool LightThread::sendUdpPacket(AckType ack, MessageType type, const std::vector
 }
 
 // Sends a UDP packet with the given header and payload.
-// Optionally enables reliable delivery (retry until ACK received).
 bool LightThread::sendUdpPacket(AckType ack, MessageType type, const uint8_t *payload,
                                 size_t length, const String &destIp, uint16_t destPort,
                                 std::optional<uint16_t> messageId) {
@@ -288,11 +275,6 @@ bool LightThread::sendUdpPacket(AckType ack, MessageType type, const uint8_t *pa
     fullMsg.push_back(static_cast<uint8_t>(ack));
     fullMsg.push_back(static_cast<uint8_t>(type));
 
-    // Optional: messageId (2 bytes)
-    if(messageId.has_value()) {
-        fullMsg.push_back((messageId.value() >> 8) & 0xFF);
-        fullMsg.push_back(messageId.value() & 0xFF);
-    }
 
     fullMsg.insert(fullMsg.end(), payload, payload + length);
 
@@ -305,31 +287,3 @@ bool LightThread::sendUdpPacket(AckType ack, MessageType type, const uint8_t *pa
     return true;
 }
 
-void LightThread::updateReliableUdp() {
-    unsigned long now = millis();
-
-    for(auto it = pendingReliableMessages.begin(); it != pendingReliableMessages.end();) {
-        uint16_t msgId = it->first;
-        PendingReliableUdp &msg = it->second;
-
-        if(now - msg.timeSent >= 2000) {
-            if(msg.retryCount >= 5) {
-                logLightThread(LT_LOG_INFO, "ReliableUDP: Dropping msgId %u to %s", msgId,
-                               msg.destIp.c_str());
-                if(reliableCallback)
-                    reliableCallback(msgId, msg.destIp, false);
-                it = pendingReliableMessages.erase(it);
-                continue;
-            }
-
-            logLightThread(LT_LOG_INFO, "ReliableUDP: Retrying msgId %u to %s (attempt %u)", msgId,
-                           msg.destIp.c_str(), msg.retryCount + 1);
-            sendUdpPacket(AckType::REQUEST, MessageType::NORMAL, msg.payload, msg.destIp, 12345,
-                          msgId);
-            msg.timeSent = now;
-            msg.retryCount++;
-        }
-
-        ++it;
-    }
-}

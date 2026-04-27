@@ -53,12 +53,10 @@ class LightThread {
     // ------------------------
     // Exposed UDP (public-facing interface)
     void registerUdpReceiveCallback(
-        std::function<void(const String &, bool reliable, const std::vector<uint8_t> &)> fn);
-    void registerReliableUdpStatusCallback(
-        std::function<void(uint16_t msgId, const String &ip, bool success)> cb);
+        std::function<void(const String &, const std::vector<uint8_t> &)> fn);
     void registerJoinCallback(std::function<void(const String &ip, const String &hashmac)> cb);
 
-    bool sendUdp(const String &destIp, bool reliable, const std::vector<uint8_t> &payload);
+    bool sendUdp(const String &destIp, const std::vector<uint8_t> &payload);
     unsigned long getLastEchoTime(const String &ip);
     bool isReady() const;
     Role getRole() const { return role; }
@@ -91,18 +89,8 @@ class LightThread {
 
     uint16_t nextMessageId = 0;
 
-    struct PendingReliableUdp {
-        String destIp;
-        std::vector<uint8_t> payload; // Includes messageId prepended
-        unsigned long timeSent;
-        uint8_t retryCount;
-    };
-
-    std::map<uint16_t, PendingReliableUdp> pendingReliableMessages;
-
-    std::function<void(uint16_t, const String &, bool)> reliableCallback = nullptr;
-    std::function<void(const String &srcIp, bool reliable, const std::vector<uint8_t> &payload)>
-        udpCallback = nullptr;
+    
+    std::function<void(const String &srcIp, const std::vector<uint8_t> &payload)>  udpCallback = nullptr;
     std::function<void(const String &, const String &)> joinCallback = nullptr;
 
     // ------------------------
@@ -178,7 +166,6 @@ class LightThread {
     bool parseIncomingPayload(const String &hex, AckType &ack, MessageType &type,
                               std::vector<uint8_t> &payloadOut);
     uint64_t generateMacHash();
-    void updateReliableUdp();
     // ------------------------
     // Utils.cpp
     // ------------------------

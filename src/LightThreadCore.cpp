@@ -38,7 +38,6 @@ void LightThread::update() {
     }
 
     updateLighting();    // Update RGB LED
-    updateReliableUdp(); // Retry pending reliable messages
 }
 
 // Sets the current FSM state and resets its entry timer
