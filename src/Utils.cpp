@@ -26,12 +26,31 @@ bool LightThread::convertHexToBytes(const String &hexStr, std::vector<uint8_t> &
     return true;
 }
 
-String LightThread::getLeaderIp() {
-    if(getRole() == Role::LEADER) {
-        return "";
-    } else if(getRole() == Role::JOINER) {
-        return leaderIp;
+std::vector<uint8_t> LightThread::hashToBytes(uint64_t hash) {
+    std::vector<uint8_t> bytes;
+
+    for(int i = 7; i >= 0; --i) {
+        bytes.push_back((hash >> (i * 8)) & 0xFF);
     }
+
+    return bytes;
+}
+
+uint64_t LightThread::bytesToHash(const std::vector<uint8_t> &bytes) {
+    uint64_t hash = 0;
+
+    for(size_t i = 0; i < bytes.size() && i < 8; ++i) {
+        hash <<= 8;
+        hash |= bytes[i];
+    }
+
+    return hash;
+}
+
+String LightThread::hashToString(uint64_t hash) {
+    char buf[17];
+    snprintf(buf, sizeof(buf), "%016llx", hash);
+    return String(buf);
 }
 
 void LightThread::logLightThread(LightThreadLogLevel level, const char *fmt, ...) {

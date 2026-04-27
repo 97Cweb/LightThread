@@ -17,28 +17,11 @@ void LightThread::begin() {
 // Main loop update: handles input and state transitions
 void LightThread::update() {
     handleButton(); // Check for button presses
+    
+    readCliSerial();
     processState(); // Call the handler for current state
-
-    String cliBuffer;
-    String udpLine;
-    bool isUDP;
-
-    // Read characters from CLI and process full lines
-    while(OThreadCLI.available()) {
-        char c = OThreadCLI.read();
-
-        if(processCLIChar(c, cliBuffer, isUDP, udpLine)) {
-            if(isUDP) {
-                handleUdpLine(udpLine); // Handle incoming UDP
-            } else {
-                handleCliLine(cliBuffer); // Handle CLI output
-                cliBuffer = "";           // Clear buffer
-            }
-        }
-    }
-
+    updateCliCommand();
     updateLighting();    // Update RGB LED
-    updateReliableUdp(); // Retry pending reliable messages
 }
 
 // Sets the current FSM state and resets its entry timer
@@ -77,7 +60,9 @@ void LightThread::processState() {
     case State::COMMISSIONER_ACTIVE:
         handleCommissionerActive();
         break;
-
+    case State::COMMISSIONER_STOPPING:
+        handleCommissionerStopping();
+        break;
     case State::JOINER_START:
         handleJoinerStart();
         break;
@@ -98,6 +83,10 @@ void LightThread::processState() {
         break;
     case State::JOINER_SEEKING_LEADER:
         handleJoinerSeekingLeader();
+        break;
+    case State::JOINER_FACTORY_RESET:
+        handleJoinerFactoryReset();
+        break;
 
     case State::ERROR:
         handleError();
@@ -110,8 +99,10 @@ void LightThread::processState() {
 
 // Initial state: load config, setup network, choose FSM path
 void LightThread::handleInit() {
+    static int leaderInitStep = 0;
     if(justEntered) {
         justEntered = false;
+        leaderInitStep = 0;
 
         if(!loadNetworkConfig()) {
             setState(State::ERROR);
@@ -119,31 +110,61 @@ void LightThread::handleInit() {
         }
 
         String tmp;
-        if(role == Role::LEADER) {
-            // Setup the Thread network from scratch
-            logLightThread(LT_LOG_INFO, "LEADER detected. Bootstrapping network setup...");
 
-            execAndMatch("dataset init new", "Done");
-            execAndMatch("dataset channel " + String(configuredChannel), "Done");
-            execAndMatch("dataset panid " + configuredPanid, "Done");
-            execAndMatch("dataset networkkey 00112233445566778899aabbccddeeff", "Done");
-            execAndMatch("dataset meshlocalprefix " + configuredPrefix, "Done");
-            execAndMatch("dataset commit active", "Done");
-            execAndMatch("ifconfig up", "Done");
-            execAndMatch("thread start", "Done");
-
-            setState(State::LEADER_WAIT_NETWORK);
-        } else {
+        if(role != Role::LEADER){
             if(loadLeaderInfo(leaderIp, tmp)) {
                 logLightThread(LT_LOG_INFO, "INIT: Joiner has saved leader info: %s",
                                leaderIp.c_str());
                 setState(State::JOINER_RECONNECT);
-            } else {
+            } 
+            else {
                 logLightThread(LT_LOG_INFO, "INIT: No saved leader info, standby");
                 setState(State::STANDBY);
             }
+            return;
         }
+        logLightThread(LT_LOG_INFO, "LEADER detected. Bootstrapping network setup...");
     }
+
+    if (role != Role::LEADER) return;
+
+    const String commands[] = {
+        "dataset init new",
+        "dataset channel " + String(configuredChannel),
+        "dataset panid " + configuredPanid,
+        "dataset networkkey 00112233445566778899aabbccddeeff",
+        "dataset meshlocalprefix " + configuredPrefix,
+        "dataset commit active",
+        "ifconfig up",
+        "thread start"
+    };
+
+    const int commandCount = sizeof(commands) / sizeof(commands[0]);
+
+    if (cliCommandFailed()) {
+        cliFailed = false;
+        logLightThread(LT_LOG_ERROR, "INIT: CLI command failed");
+        setState(State::ERROR);
+        return;
+    }
+
+    if (cliCommandDone()) {
+        cliDone = false;
+        leaderInitStep++;
+
+        if (leaderInitStep >= commandCount) {
+            setState(State::LEADER_WAIT_NETWORK);
+            return;
+        }
+
+        startCliCommand(commands[leaderInitStep], "Done", 2000);
+        return;
+    }
+
+    if (!cliBusy) {
+        startCliCommand(commands[leaderInitStep], "Done", 2000);
+    }
+
 }
 
 // Leader standby: monitor joiner heartbeats and remove stale entries
@@ -196,8 +217,7 @@ void LightThread::handleButton() {
             // Long press = factory reset (for joiners only)
             logLightThread(LT_LOG_INFO, "Long press");
             if(role == Role::JOINER) {
-                clearPersistentState();
-                setState(State::STANDBY);
+                setState(State::JOINER_FACTORY_RESET);
             }
         } else {
             // Short press = trigger pairing

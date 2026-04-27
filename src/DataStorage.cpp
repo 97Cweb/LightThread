@@ -51,10 +51,8 @@ bool LightThread::parseNetworkJson(const String &jsonStr) {
     // Map string to enum Role
     if(roleStr == "leader") {
         role = Role::LEADER;
-        roleLoadedFromConfig = true;
     } else if(roleStr == "joiner") {
         role = Role::JOINER;
-        roleLoadedFromConfig = true;
     } else {
         logLightThread(LT_LOG_ERROR, "Invalid role '%s' in network.json", roleStr.c_str());
         return false;
@@ -141,12 +139,18 @@ bool LightThread::loadLeaderInfo(String &outIp, String &outHashmac) {
     StaticJsonDocument<256> doc;
     DeserializationError err = deserializeJson(doc, file);
     file.close();
+
     if(err)
         return false;
 
+    if(!doc.containsKey("leader_ip") || !doc.containsKey("leader_hash")) {
+        return false;
+    }
+
     outIp = (const char *)doc["leader_ip"];
-    outHashmac = (const char *)doc["hashmac"];
-    return true;
+    outHashmac = (const char *)doc["leader_hash"];
+
+    return !outIp.isEmpty() && !outHashmac.isEmpty();
 }
 
 // Removes all persistent config and joiner/leader tracking files.

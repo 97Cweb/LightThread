@@ -1,65 +1,55 @@
 #include "LightThread.h"
 #include "OThreadCLI.h"
 
-// Executes a command via the OpenThread CLI and waits for a specific string to appear in the
-// output. Parameters:
-//   - command: The CLI command to send (e.g., "dataset commit active").
-//   - mustContain: A substring that must be present in the CLI response (e.g., "Done").
-//   - out: Optional pointer to capture the full CLI response (multi-line).
-//   - timeoutMs: Maximum time to wait for a matching response.
-// Returns true if the match string is found in time, false otherwise.
-bool LightThread::execAndMatch(const String &command, const String &mustContain, String *out,
-                               unsigned long timeoutMs) {
-    logLightThread(LT_LOG_INFO, "CLI: %s", command.c_str());
-    // Send command to OpenThread CLI
-    OThreadCLI.println(command);
-    String response;
-    // Wait for a response that includes the required substring
-    if(!waitForString(response, timeoutMs, mustContain)) {
-        logLightThread(LT_LOG_WARN, "Command '%s' timed out", command.c_str());
-        return false;
-    }
-    // Store the full response if the caller requested it
-    if(out)
-        *out = response;
-    return true;
-}
+void LightThread::readCliSerial() {
+    static String multiline = "";
 
-// Handles a single line of CLI output.
-// loggs an unclaimed (non-parsed) CLI response.
-void LightThread::handleCliLine(const String &line) {
-    // Optional: Add routing logic later if needed
-    logLightThread(LT_LOG_INFO, "CLI Response (unclaimed): %s", line.c_str());
-}
+    while(OThreadCLI.available()) {
+        String lineOut;
+        String srcIp;
+        bool isUDP = false;
 
-// Waits for CLI output to include a specific match string.
-// Collects lines into `responseBuffer`. Returns true if match found.
-bool LightThread::waitForString(String &responseBuffer, unsigned long timeoutMs,
-                                const String &matchStr) {
-    responseBuffer = "";
-    unsigned long start = millis();
-    String line;
-    bool isUDP = false;
+        char c = OThreadCLI.read();
 
-    while(millis() - start < timeoutMs) {
-        if(otGetResp(line, isUDP, timeoutMs)) {
-            if(!isUDP) {
-                responseBuffer += line + "\n";
-                log_d("CLI Resp: %s", line.c_str());
-                if(line.indexOf(matchStr) != -1) {
-                    return true;
-                }
+        if(processCLI(c, multiline, isUDP, lineOut, srcIp)) {
+            if(isUDP) {
+                handleUdpLine(lineOut, srcIp);
+            } else {
+                handleCliLine(lineOut);
             }
         }
     }
-
-    logLightThread(LT_LOG_WARN, "Timeout while waiting for '%s'", matchStr.c_str());
-    return false;
 }
+
+
+// Handles a single line of CLI output.
+// logs an unclaimed (non-parsed) CLI response.
+void LightThread::handleCliLine(const String &line) {
+
+    if(cliBusy){
+        pendingCliResponse += line;
+
+        if(pendingCliExpected.length() == 0 || 
+            pendingCliResponse.indexOf(pendingCliExpected) != -1){
+            cliBusy = false;
+            cliDone = true;
+
+            logLightThread(
+                LT_LOG_INFO,
+                "CLI matched '%s' for command: %s",
+                pendingCliExpected.c_str(),
+                pendingCliCommand.c_str()
+            );
+        }
+        return;
+    }
+    logLightThread(LT_LOG_INFO, "CLI Response (unclaimed): %s", line.c_str());
+}
+
 
 // Processes individual characters from the CLI to reconstruct full lines.
 // Recognizes UDP lines and multi-line CLI responses.
-bool LightThread::processCLIChar(char c, String &multiline, bool &isUDP, String &lineOut) {
+bool LightThread::processCLI(char c, String &multiline, bool &isUDP, String &lineOut, String &srcIpOut) {
     static String buffer = "";
 
     // End-of-line handling
@@ -71,7 +61,15 @@ bool LightThread::processCLIChar(char c, String &multiline, bool &isUDP, String 
         buffer = "";
 
         // Detect UDP message (OpenThread format with port 12345)
-        if(line.indexOf("bytes from") != -1 && line.indexOf("12345") != -1) {
+        int ipIndex = line.indexOf("bytes from ");
+        if(ipIndex!= -1 && line.indexOf("12345") != -1) {
+            srcIpOut = "";
+            int ipStart = ipIndex + 11;
+            int ipEnd = line.indexOf(' ', ipStart);
+            if(ipEnd != -1){
+                srcIpOut = line.substring(ipStart,ipEnd);
+            }
+
             isUDP = true;
             lineOut = line;
             multiline = ""; // Clear multiline buffer
@@ -96,45 +94,53 @@ bool LightThread::processCLIChar(char c, String &multiline, bool &isUDP, String 
     return false;
 }
 
-// Fetches a line of CLI or UDP output from the CLI stream.
-// Uses `processCLIChar` to handle parsing logic.
-bool LightThread::otGetResp(String &lineOut, bool &isUDP, unsigned long timeoutMs) {
-    static String buffer = "";
-    static String multiline = "";
-    static String queuedLine = "";
-    static bool queuedIsUDP = false;
 
-    // Priority: Return queued line if present
-    if(queuedLine.length()) {
-        lineOut = queuedLine;
-        isUDP = queuedIsUDP;
-        queuedLine = "";
-        return true;
+bool LightThread::startCliCommand(const String& command, 
+                                    const String& expected,
+                                    unsigned long timeoutMs ){
+    if (cliBusy){
+        return false;
     }
+    pendingCliCommand = command;
+    pendingCliExpected = expected;
+    pendingCliResponse = "";
 
-    unsigned long start = millis();
-    isUDP = false;
+    cliBusy = true;
+    clearCliResult();
 
-    while(millis() - start < timeoutMs) {
-        while(OThreadCLI.available()) {
-            char c = OThreadCLI.read();
+    cliCommandStart = millis();
+    cliCommandTimeout = timeoutMs;
 
-            // If a complete line is assembled, return it
-            if(processCLIChar(c, multiline, isUDP, lineOut)) {
-                return true; // either UDP or CLI complete line
-            }
-        }
+    logLightThread(LT_LOG_INFO, "CLI CMD: %s", command.c_str());
+    OThreadCLI.println(command);
 
-        delay(5); // Yield to avoid tight loop
+    return true;
+}
+
+void LightThread::updateCliCommand(){
+    if(!cliBusy) return;
+
+    if(millis() - cliCommandStart >= cliCommandTimeout){
+        cliBusy = false;
+        cliFailed = true;
+
+        logLightThread(LT_LOG_WARN, "CLI timeout: %s", pendingCliCommand.c_str());
     }
+}
 
-    // Fallback: If we accumulated some CLI but didn't finish with "Done"
-    if(multiline.length() > 0) {
-        lineOut = multiline;
-        multiline = "";
-        isUDP = false;
-        return true;
-    }
+bool LightThread::cliCommandDone(){
+    return cliDone;
+}
 
-    return false;
+bool LightThread::cliCommandFailed(){
+    return cliFailed;
+}
+
+String LightThread::getCliResponse(){
+    return pendingCliResponse;
+}
+
+void LightThread::clearCliResult(){
+    cliDone = false;
+    cliFailed = false;
 }

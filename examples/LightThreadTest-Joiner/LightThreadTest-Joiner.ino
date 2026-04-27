@@ -14,8 +14,8 @@ void loop() {
 
       if (!sent && millis() > 3000) {
           std::vector<uint8_t> payload = { 'h', 'e', 'l', 'l', 'o' };
-          bool ok = lightThread.sendUdp(lightThread.getLeaderIp(), true, payload);
-          log_i("JOINER TEST: Sent reliable payload: %s", ok ? "OK" : "FAIL");
+          bool ok = lightThread.sendUdp(lightThread.getLeaderIp(), payload);
+          log_i("JOINER TEST: Sent payload: %s", ok ? "OK" : "FAIL");
           sent = true;
       }
   }
