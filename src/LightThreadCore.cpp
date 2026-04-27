@@ -84,6 +84,9 @@ void LightThread::processState() {
     case State::JOINER_SEEKING_LEADER:
         handleJoinerSeekingLeader();
         break;
+    case State::JOINER_FACTORY_RESET:
+        handleJoinerFactoryReset();
+        break;
 
     case State::ERROR:
         handleError();
@@ -139,12 +142,14 @@ void LightThread::handleInit() {
     const int commandCount = sizeof(commands) / sizeof(commands[0]);
 
     if (cliCommandFailed()) {
+        cliFailed = false;
         logLightThread(LT_LOG_ERROR, "INIT: CLI command failed");
         setState(State::ERROR);
         return;
     }
 
     if (cliCommandDone()) {
+        cliDone = false;
         leaderInitStep++;
 
         if (leaderInitStep >= commandCount) {
@@ -212,8 +217,7 @@ void LightThread::handleButton() {
             // Long press = factory reset (for joiners only)
             logLightThread(LT_LOG_INFO, "Long press");
             if(role == Role::JOINER) {
-                clearPersistentState();
-                setState(State::STANDBY);
+                setState(State::JOINER_FACTORY_RESET);
             }
         } else {
             // Short press = trigger pairing

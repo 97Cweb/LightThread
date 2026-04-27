@@ -22,6 +22,7 @@ enum class State {
     JOINER_PAIRED,
     JOINER_RECONNECT,
     JOINER_SEEKING_LEADER,
+    JOINER_FACTORY_RESET,
 
     // Leader path
     LEADER_WAIT_NETWORK,
@@ -149,10 +150,9 @@ class LightThread {
     void handleJoinerPaired();
     void handleJoinerReconnect();
     void handleJoinerSeekingLeader();
+    void handleJoinerFactoryReset();
 
-    int getJoinerSetupCommandCount() const{
-        return 17;
-    }
+    int getJoinerSetupCommandCount() const;
 
     String getJoinerSetupCommand(int step);
     bool runJoinerSetupSequence(int &step, const char *logPrefix);

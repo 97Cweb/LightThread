@@ -1,5 +1,9 @@
 #include "LightThread.h"
 
+
+int LightThread::getJoinerSetupCommandCount() const{
+    return 17;
+}
 String LightThread::getJoinerSetupCommand(int step) {
     switch(step) {
         case 0:  return "dataset clear";
@@ -249,9 +253,7 @@ void LightThread::handleJoinerPaired() {
                         firedJoinCallback = true;
 
                         if(joinCallback) {
-                            uint64_t myHash = generateMacHash();
-                            String hashStr = String((uint32_t)(myHash >> 32), HEX) +
-                                             String((uint32_t)(myHash & 0xFFFFFFFF), HEX);
+                            String hashStr = hashToString(generateMacHash());
 
                             joinCallback(leaderIp, hashStr);
 
@@ -464,5 +466,59 @@ void LightThread::sendHeartbeatIfDue() {
         logLightThread(LT_LOG_INFO, "HEARTBEAT: Sent to leader");
     } else {
         logLightThread(LT_LOG_WARN, "HEARTBEAT: Failed to send");
+    }
+}
+
+void LightThread::handleJoinerFactoryReset() {
+    static int step = 0;
+
+    const String commands[] = {
+        "thread stop",
+        "ifconfig down",
+        "udp close",
+        "dataset clear"
+    };
+
+    const int commandCount = sizeof(commands) / sizeof(commands[0]);
+
+    if(justEntered) {
+        justEntered = false;
+        step = 0;
+
+        clearPersistentState();
+
+        leaderIp = "";
+        myIp = "";
+        lastHeartbeatSent = 0;
+        lastHeartbeatEcho = 0;
+
+        logLightThread(LT_LOG_INFO, "JOINER_FACTORY_RESET: clearing Thread state");
+    }
+
+    if(cliCommandFailed()) {
+        cliFailed = false;
+
+        logLightThread(
+            LT_LOG_WARN,
+            "JOINER_FACTORY_RESET: command failed at step %d, continuing",
+            step
+        );
+
+        step++;
+    }
+
+    if(cliCommandDone()) {
+        cliDone = false;
+        step++;
+    }
+
+    if(step >= commandCount) {
+        logLightThread(LT_LOG_INFO, "JOINER_FACTORY_RESET: complete");
+        setState(State::STANDBY);
+        return;
+    }
+
+    if(!cliBusy) {
+        startCliCommand(commands[step], "Done", 2000);
     }
 }
