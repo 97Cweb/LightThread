@@ -32,7 +32,15 @@ enum class State {
     ERROR
 };
 
-enum MessageType { NORMAL = 0x00, PAIRING_BROADCAST = 0x01, PAIRING_REQUEST = 0x02, PAIRING_RESPONSE = 0x03, RECONNECT_REQUEST = 0x04, RECONNECT_RESPONSE = 0x05, HEARTBEAT = 0x06, HEARTBEAT_ECHO = 0x07 };
+enum MessageType {  NORMAL =                0x00, 
+                    PAIRING_BROADCAST =     0x01, 
+                    PAIRING_REQUEST =       0x02, 
+                    PAIRING_RESPONSE =      0x03, 
+                    RECONNECT_REQUEST =     0x04, 
+                    RECONNECT_RESPONSE =    0x05, 
+                    HEARTBEAT =             0x06, 
+                    HEARTBEAT_ECHO =        0x07 
+                };
 
 enum LightThreadLogLevel { LT_LOG_VERBOSE, LT_LOG_INFO, LT_LOG_WARN, LT_LOG_ERROR };
 
@@ -59,14 +67,12 @@ class LightThread {
     bool isReady() const;
     Role getRole() const { return role; }
     String getMyIp();
-    String getLeaderIp();
 
   private:
     // ------------------------
     // Variables: LightThread.h
     // ------------------------
     Role role = Role::JOINER; // default fallback
-    bool roleLoadedFromConfig = false;
     State state;
     unsigned long stateEntryTime = 0;
     bool justEntered = true;
@@ -75,7 +81,7 @@ class LightThread {
     String myIp = "";
 
 
-    //non blocking cli variables
+    //non blocking cli command tracking
     String pendingCliCommand;
     String pendingCliExpected;
     String pendingCliResponse;
@@ -92,6 +98,7 @@ class LightThread {
     bool cliCommandDone();
     bool cliCommandFailed();
     String getCliResponse();
+    void clearCliResult();
 
 
     // Data loaded from /network.json (DataStorage.cpp)
@@ -143,6 +150,13 @@ class LightThread {
     void handleJoinerReconnect();
     void handleJoinerSeekingLeader();
 
+    int getJoinerSetupCommandCount() const{
+        return 17;
+    }
+
+    String getJoinerSetupCommand(int step);
+    bool runJoinerSetupSequence(int &step, const char *logPrefix);
+
     void sendHeartbeatIfDue();
 
     // ------------------------
@@ -178,6 +192,9 @@ class LightThread {
     // ------------------------
     bool convertHexToBytes(const String &hex, std::vector<uint8_t> &out);
     String convertBytesToHex(const uint8_t *data, size_t len);
+    std::vector<uint8_t> hashToBytes(uint64_t hash);
+    uint64_t bytesToHash(const std::vector<uint8_t> &bytes);
+    String hashToString(uint64_t hash);
     void logLightThread(LightThreadLogLevel level, const char *fmt, ...);
 
     // ------------------------

@@ -51,10 +51,8 @@ bool LightThread::parseNetworkJson(const String &jsonStr) {
     // Map string to enum Role
     if(roleStr == "leader") {
         role = Role::LEADER;
-        roleLoadedFromConfig = true;
     } else if(roleStr == "joiner") {
         role = Role::JOINER;
-        roleLoadedFromConfig = true;
     } else {
         logLightThread(LT_LOG_ERROR, "Invalid role '%s' in network.json", roleStr.c_str());
         return false;
@@ -145,7 +143,7 @@ bool LightThread::loadLeaderInfo(String &outIp, String &outHashmac) {
         return false;
 
     outIp = (const char *)doc["leader_ip"];
-    outHashmac = (const char *)doc["hashmac"];
+    outHashmac = (const char *)doc["leader_hash"];
     return true;
 }
 

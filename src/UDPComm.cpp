@@ -36,10 +36,7 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
                        srcIp.c_str());
 
         // Respond with ID to leader directly
-        std::vector<uint8_t> idBytes;
-        uint64_t id = generateMacHash();
-        for(int i = 7; i >= 0; --i)
-            idBytes.push_back((id >> (i * 8)) & 0xFF);
+        std::vector<uint8_t> idBytes = hashToBytes(generateMacHash());
 
         sendUdpPacket(MessageType::PAIRING_REQUEST, idBytes, srcIp, 12345);
         setState(State::JOINER_WAIT_ACK);
@@ -57,14 +54,8 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
 
         leaderIp = srcIp;
 
-        uint64_t leaderHash = 0;
-        for(int i = 0; i < 8; ++i) {
-            leaderHash <<= 8;
-            leaderHash |= payload[i];
-        }
-
-        String hashStr = String((uint32_t)(leaderHash >> 32), HEX) +
-                         String((uint32_t)(leaderHash & 0xFFFFFFFF), HEX);
+        uint64_t leaderHash = bytesToHash(payload);
+        String hashStr = hashToString(leaderHash);
         saveLeaderInfo(leaderIp, hashStr);
 
         setState(State::JOINER_PAIRED);
@@ -72,25 +63,15 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
 
     else if(msg == MessageType::PAIRING_REQUEST &&
             inState(State::COMMISSIONER_ACTIVE)) {
-        uint64_t id = 0;
-        for(size_t i = 0; i < payload.size() && i < 8; ++i) {
-            id <<= 8;
-            id |= payload[i];
-        }
-
-        String hashStr =
-            String((uint32_t)(id >> 32), HEX) + String((uint32_t)(id & 0xFFFFFFFF), HEX);
+        uint64_t id = bytesToHash(payload);
+        String hashStr = hashToString(id);
 
         logLightThread(
             LT_LOG_INFO,
-            "COMMISSIONER_ACTIVE: Got joiner ID %016llx from %s — sending direct RESPONSE", id,
+            "COMMISSIONER_ACTIVE: Got joiner ID %s from %s — sending direct RESPONSE", hashStr.c_str(),
             srcIp.c_str());
 
-        uint64_t selfHash = generateMacHash();
-        std::vector<uint8_t> hashBytes;
-        for(int i = 7; i >= 0; --i) {
-            hashBytes.push_back((selfHash >> (i * 8)) & 0xFF);
-        }
+        std::vector<uint8_t> hashBytes = hashToBytes(generateMacHash());
         sendUdpPacket(MessageType::PAIRING_RESPONSE, hashBytes, srcIp, 12345);
 
         logLightThread(LT_LOG_INFO, "COMMISSIONER_ACTIVE: Pairing complete, exiting commissioning");
@@ -104,20 +85,13 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
             return;
         }
 
-        uint64_t joinerId = 0;
-        for(int i = 0; i < 8; ++i)
-            joinerId = (joinerId << 8) | payload[i];
-
-        String hashStr = String((uint32_t)(joinerId >> 32), HEX) +
-                         String((uint32_t)(joinerId & 0xFFFFFFFF), HEX);
+        uint64_t joinerId = bytesToHash(payload);
+        String hashStr = hashToString(joinerId);
 
         logLightThread(LT_LOG_INFO, "RECONNECT: Joiner %s [%s] is trying to find the leader",
                        srcIp.c_str(), hashStr.c_str());
 
-        uint64_t selfHash = generateMacHash();
-        std::vector<uint8_t> hashBytes;
-        for(int i = 7; i >= 0; --i)
-            hashBytes.push_back((selfHash >> (i * 8)) & 0xFF);
+        std::vector<uint8_t> hashBytes = hashToBytes(generateMacHash());
 
         sendUdpPacket(MessageType::RECONNECT_RESPONSE, hashBytes, srcIp, 12345);
     }
@@ -128,16 +102,9 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
             return;
         }
 
-        uint64_t receivedLeaderHash = 0;
-        for(int i = 0; i < 8; ++i)
-            receivedLeaderHash = (receivedLeaderHash << 8) | payload[i];
+        uint64_t receivedLeaderHash = bytesToHash(payload);
+        String receivedStr = hashToString(receivedLeaderHash);
 
-        uint64_t expectedHash =
-            generateMacHash(); // Joiner's view of the leader hash (loaded at boot)
-        String receivedStr = String((uint32_t)(receivedLeaderHash >> 32), HEX) +
-                             String((uint32_t)(receivedLeaderHash & 0xFFFFFFFF), HEX);
-
-        String oldIp = leaderIp;
         leaderIp = srcIp;
         lastHeartbeatEcho = millis();
 
@@ -161,13 +128,8 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
             return;
         }
 
-        // Parse hashMAC from payload
-        uint64_t id = 0;
-        for(int i = 0; i < 8; ++i)
-            id = (id << 8) | payload[i];
-
-        String hashStr =
-            String((uint32_t)(id >> 32), HEX) + String((uint32_t)(id & 0xFFFFFFFF), HEX);
+        uint64_t id = bytesToHash(payload);
+        String hashStr = hashToString(id);
 
         unsigned long now = millis();
         unsigned long lastSeen;
@@ -239,7 +201,6 @@ bool LightThread::sendUdpPacket(MessageType type, const std::vector<uint8_t> &pa
 }
 
 // Sends a UDP packet with the given header and payload.
-// Optionally enables reliable delivery (retry until ACK received).
 bool LightThread::sendUdpPacket(MessageType type, const uint8_t *payload,
                                 size_t length, const String &destIp, uint16_t destPort) {
     if(destIp.isEmpty() || destPort == 0) {

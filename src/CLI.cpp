@@ -106,8 +106,7 @@ bool LightThread::startCliCommand(const String& command,
     pendingCliResponse = "";
 
     cliBusy = true;
-    cliDone = false;
-    cliFailed = false;
+    clearCliResult();
 
     cliCommandStart = millis();
     cliCommandTimeout = timeoutMs;
@@ -139,4 +138,9 @@ bool LightThread::cliCommandFailed(){
 
 String LightThread::getCliResponse(){
     return pendingCliResponse;
+}
+
+void LightThread::clearCliResult(){
+    cliDone = false;
+    cliFailed = false;
 }
