@@ -184,11 +184,11 @@ void LightThread::handleJoinerWaitBroadcast() {
 void LightThread::handleJoinerWaitAck() {
     if(justEntered) {
         justEntered = false;
-        logLightThread(LT_LOG_INFO, "JOINER_WAIT_ACK: Waiting for PAIRING_RESPONSE...");
+        logLightThread(LT_LOG_INFO, "JOINER_WAIT_RESPONSE: Waiting for PAIRING_RESPONSE...");
     }
 
     if(timeInState() > 10000) { // 10s timeout
-        logLightThread(LT_LOG_WARN, "JOINER_WAIT_ACK: Timed out waiting for ACK");
+        logLightThread(LT_LOG_WARN, "JOINER_WAIT_RESPONSE: Timed out waiting for ACK");
         setState(State::STANDBY);
     }
 }
