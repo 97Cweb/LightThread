@@ -139,12 +139,18 @@ bool LightThread::loadLeaderInfo(String &outIp, String &outHashmac) {
     StaticJsonDocument<256> doc;
     DeserializationError err = deserializeJson(doc, file);
     file.close();
+
     if(err)
         return false;
 
+    if(!doc.containsKey("leader_ip") || !doc.containsKey("leader_hash")) {
+        return false;
+    }
+
     outIp = (const char *)doc["leader_ip"];
     outHashmac = (const char *)doc["leader_hash"];
-    return true;
+
+    return !outIp.isEmpty() && !outHashmac.isEmpty();
 }
 
 // Removes all persistent config and joiner/leader tracking files.
