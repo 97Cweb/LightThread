@@ -45,7 +45,7 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
         setState(State::JOINER_WAIT_ACK);
     }
 
-    else if(msg == MessageType::PAIRING_REQUEST &&
+    else if(msg == MessageType::PAIRING_RESPONSE &&
             inState(State::JOINER_WAIT_ACK)) {
         logLightThread(LT_LOG_INFO, "JOINER_WAIT_ACK: Got PAIRING RESPONSE from %s", srcIp.c_str());
 
@@ -70,7 +70,7 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
         setState(State::JOINER_PAIRED);
     }
 
-    else if(msg == MessageType::PAIRING_RESPONSE &&
+    else if(msg == MessageType::PAIRING_REQUEST &&
             inState(State::COMMISSIONER_ACTIVE)) {
         uint64_t id = 0;
         for(size_t i = 0; i < payload.size() && i < 8; ++i) {
@@ -94,7 +94,7 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
         sendUdpPacket(MessageType::PAIRING_RESPONSE, hashBytes, srcIp, 12345);
 
         logLightThread(LT_LOG_INFO, "COMMISSIONER_ACTIVE: Pairing complete, exiting commissioning");
-        setState(State::STANDBY);
+        setState(State::COMMISSIONER_STOPPING);
     }
 
     else if(msg == MessageType::RECONNECT_REQUEST && role == Role::LEADER &&
