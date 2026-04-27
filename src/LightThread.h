@@ -4,7 +4,8 @@
 #include <Arduino.h>
 #include <OThreadCLI.h> // must include full header
 
-#define BUTTON_PIN 9
+#include "LightThreadConfig.h"
+
 #include <map>
 
 // --- ENUM DEFINITIONS ---
