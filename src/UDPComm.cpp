@@ -39,15 +39,15 @@ void LightThread::handleUdpLine(const String &line, const String &srcIp) {
         std::vector<uint8_t> idBytes = hashToBytes(generateMacHash());
 
         sendUdpPacket(MessageType::PAIRING_REQUEST, idBytes, srcIp, 12345);
-        setState(State::JOINER_WAIT_ACK);
+        setState(State::JOINER_WAIT_RESPONSE);
     }
 
     else if(msg == MessageType::PAIRING_RESPONSE &&
-            inState(State::JOINER_WAIT_ACK)) {
-        logLightThread(LT_LOG_INFO, "JOINER_WAIT_ACK: Got PAIRING RESPONSE from %s", srcIp.c_str());
+            inState(State::JOINER_WAIT_RESPONSE)) {
+        logLightThread(LT_LOG_INFO, "JOINER_WAIT_RESPONSE: Got PAIRING RESPONSE from %s", srcIp.c_str());
 
         if(payload.size() != 8) {
-            logLightThread(LT_LOG_ERROR, "JOINER_WAIT_ACK: Expected 8-byte hashmac in response");
+            logLightThread(LT_LOG_ERROR, "JOINER_WAIT_RESPONSE: Expected 8-byte hashmac in response");
             setState(State::ERROR);
             return;
         }

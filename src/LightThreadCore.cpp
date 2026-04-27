@@ -72,7 +72,7 @@ void LightThread::processState() {
     case State::JOINER_WAIT_BROADCAST:
         handleJoinerWaitBroadcast();
         break;
-    case State::JOINER_WAIT_ACK:
+    case State::JOINER_WAIT_RESPONSE:
         handleJoinerWaitAck();
         break;
     case State::JOINER_PAIRED:
@@ -275,7 +275,7 @@ void LightThread::updateLighting() {
     case State::JOINER_WAIT_BROADCAST:
         blink(0, 128, 255);
         break; // bluish green
-    case State::JOINER_WAIT_ACK:
+    case State::JOINER_WAIT_RESPONSE:
         blink(0, 128, 255);
         break;
     case State::JOINER_PAIRED:
