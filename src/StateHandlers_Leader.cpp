@@ -20,17 +20,17 @@ void LightThread::handleLeaderWaitNetwork() {
         justEntered = false;
         step = QUERY_STATE;
         lastCheck = 0;
-        logLightThread(LT_LOG_INFO, "LEADER_WAIT_NETWORK: Waiting for Thread network...");
+        logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_WAIT_NETWORK: Waiting for Thread network...");
     }
 
-    if(timeInState() > 50000){
-        logLightThread(LT_LOG_ERROR, "LEADER_WAIT_NETWORK: Timed out waiting for leader state");
+    if(timeInState() > LIGHTTHREAD_LEADER_TIMEOUT_MS){
+        logLightThread(LIGHTTHREAD_LOG_ERROR, "LEADER_WAIT_NETWORK: Timed out waiting for leader state");
         setState(State::ERROR);
         return;
     }
 
     if(cliCommandFailed()){
-        logLightThread(LT_LOG_WARN, "LEADER_WAIT_NETWORK: CLI command failed");
+        logLightThread(LIGHTTHREAD_LOG_WARN, "LEADER_WAIT_NETWORK: CLI command failed");
         cliFailed = false;
         cliDone = false;
         cliBusy = false;
@@ -40,9 +40,9 @@ void LightThread::handleLeaderWaitNetwork() {
 
     switch(step){
         case QUERY_STATE:
-            if(timeInState()-lastCheck < 5000) return;
+            if(timeInState()-lastCheck < LIGHTTHREAD_CLI_STATE_CHECK_INTERVAL_MS) return;
             lastCheck = timeInState();
-            if(startCliCommand("state","",1000)){
+            if(startCliCommand("state","",LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS)){
                 step = WAIT_STATE_RESPONSE;
             }
             break;
@@ -53,14 +53,14 @@ void LightThread::handleLeaderWaitNetwork() {
             String response = getCliResponse();
             cliDone = false;
             if(response.indexOf("leader") != -1 || response.indexOf("router") != -1){
-                logLightThread(LT_LOG_INFO,
+                logLightThread(LIGHTTHREAD_LOG_INFO,
                                 "LEADER_WAIT_NETWORK: Thread is up in state: %s",
                                 response.c_str());
-                startCliCommand("udp open", "Done", 1000);
+                startCliCommand("udp open", LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
                 step = UDP_OPEN;
             }
             else{
-                logLightThread(LT_LOG_INFO, "LEADER_WAIT_NETWORK: Not leader/router yet");
+                logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_WAIT_NETWORK: Not leader/router yet");
                 step = QUERY_STATE;
             }
             break;
@@ -69,7 +69,7 @@ void LightThread::handleLeaderWaitNetwork() {
             if(!cliCommandDone()) return;
             
             cliDone = false;
-            startCliCommand("udp bind :: 12345", "Done",1000);
+            startCliCommand(String("udp bind :: ") + LIGHTTHREAD_UDP_PORT, LIGHTTHREAD_CLI_DONE,LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
 
             step = UDP_BIND;
             break;
@@ -77,7 +77,7 @@ void LightThread::handleLeaderWaitNetwork() {
             if(!cliCommandDone()) return;
 
             cliDone = false;
-            startCliCommand("ipaddr mleid", "",1000);
+            startCliCommand(LIGHTTHREAD_CLI_MLEID_COMMAND, "",LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
             step = GET_MLEID;
             break;
 
@@ -87,7 +87,7 @@ void LightThread::handleLeaderWaitNetwork() {
             cliDone = false;
             captureMyIpFromResponse(getCliResponse());
 
-            logLightThread(LT_LOG_INFO, "LEADER_WAIT_NETWORK: UDP ready");
+            logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_WAIT_NETWORK: UDP ready");
             setState(State::STANDBY);
             step = DONE;
             break;
@@ -100,24 +100,24 @@ void LightThread::handleLeaderWaitNetwork() {
 void LightThread::handleCommissionerStart() {
     if(justEntered) {
         justEntered = false;
-        logLightThread(LT_LOG_INFO, "COMMISSIONER_START: starting commissioner...");
+        logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_START: starting commissioner...");
 
-        if(!startCliCommand("commissioner start", "Done", 3000)){
-            logLightThread(LT_LOG_WARN, "COMMISSIONER_START: CLI busy");
+        if(!startCliCommand("commissioner start", LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS)){
+            logLightThread(LIGHTTHREAD_LOG_WARN, "COMMISSIONER_START: CLI busy");
             return;
         }
     }
     
     if(cliCommandDone()){
         cliDone = false;
-        logLightThread(LT_LOG_INFO, "COMMISSIONER_START: commissioner started");
+        logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_START: commissioner started");
         setState(State::COMMISSIONER_ACTIVE);
         return;
     }
     
     if(cliCommandFailed()){
         cliFailed = false;
-        logLightThread(LT_LOG_ERROR, "COMMISSIONER_START: Failed to start commissioner");
+        logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISSIONER_START: Failed to start commissioner");
         setState(State::ERROR);
         return;
     }
@@ -127,27 +127,26 @@ void LightThread::handleCommissionerStart() {
 // Transitions to STANDBY after 60 seconds.
 void LightThread::handleCommissionerActive() {
     static unsigned long lastBroadcast = 0;
-    const unsigned long broadcastInterval = 3000; // 3 seconds
 
     // Broadcast PAIRING signal
-    if(millis() - lastBroadcast > broadcastInterval) {
+    if(millis() - lastBroadcast > LIGHTTHREAD_LEADER_BROADCAST_INTERVAL_MS) {
         lastBroadcast = millis();
 
         std::vector<uint8_t> emptyPayload;
         bool ok = sendUdpPacket(MessageType::PAIRING_BROADCAST, emptyPayload,
-                                "ff03::1", // multicast all nodes
-                                12345);
+                                LIGHTTHREAD_MULTICAST_ALL_NODES, // multicast all nodes
+                                LIGHTTHREAD_UDP_PORT);
 
         if(ok) {
-            logLightThread(LT_LOG_INFO, "COMMISSIONER_ACTIVE: Sent PAIR_REQUEST broadcast");
+            logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_ACTIVE: Sent PAIR_REQUEST broadcast");
         } else {
-            logLightThread(LT_LOG_WARN, "COMMISSIONER_ACTIVE: Failed to send PAIR_REQUEST");
+            logLightThread(LIGHTTHREAD_LOG_WARN, "COMMISSIONER_ACTIVE: Failed to send PAIR_REQUEST");
         }
     }
 
     // End commissioning after 60 seconds
-    if(timeInState() > 60000) {
-        logLightThread(LT_LOG_INFO,
+    if(timeInState() > LIGHTTHREAD_LEADER_TIMEOUT_MS) {
+        logLightThread(LIGHTTHREAD_LOG_INFO,
                    "COMMISSIONER_ACTIVE: Pairing timed out. Stopping commissioner");
         setState(State::COMMISSIONER_STOPPING);
         return;
@@ -157,24 +156,24 @@ void LightThread::handleCommissionerActive() {
 void LightThread::handleCommissionerStopping(){
     if(justEntered){
         justEntered = false;
-        logLightThread(LT_LOG_INFO, "COMMISSIONER_STOPPING: stopping commissioner...");
+        logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_STOPPING: stopping commissioner...");
         
-        if(!startCliCommand("commissioner stop", "Done", 3000)) {
-            logLightThread(LT_LOG_WARN, "COMMISSIONER_STOPPING: CLI busy");
+        if(!startCliCommand("commissioner stop", LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS)) {
+            logLightThread(LIGHTTHREAD_LOG_WARN, "COMMISSIONER_STOPPING: CLI busy");
             return;
         }
     }
 
     if(cliCommandDone()){
         cliDone = false;
-        logLightThread(LT_LOG_INFO, "COMMISSIONER_STOPPING: Stopped");
+        logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_STOPPING: Stopped");
         setState(State::STANDBY);
         return;
     }
 
     if(cliCommandFailed()){
         cliFailed = false;
-        logLightThread(LT_LOG_WARN, "COMMISSIONER_STOPPING: Timeout, forcing standby anyway");
+        logLightThread(LIGHTTHREAD_LOG_WARN, "COMMISSIONER_STOPPING: Timeout, forcing standby anyway");
         setState(State::STANDBY);
         return;
     }

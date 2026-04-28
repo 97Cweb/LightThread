@@ -4,7 +4,8 @@
 #include <Arduino.h>
 #include <OThreadCLI.h> // must include full header
 
-#define BUTTON_PIN 9
+#include "LightThreadConfig.h"
+
 #include <map>
 
 // --- ENUM DEFINITIONS ---
@@ -43,7 +44,7 @@ enum MessageType {  NORMAL =                0x00,
                     HEARTBEAT_ECHO =        0x07 
                 };
 
-enum LightThreadLogLevel { LT_LOG_VERBOSE, LT_LOG_INFO, LT_LOG_WARN, LT_LOG_ERROR };
+enum LightThreadLogLevel { LIGHTTHREAD_LOG_VERBOSE, LIGHTTHREAD_LOG_INFO, LIGHTTHREAD_LOG_WARN, LIGHTTHREAD_LOG_ERROR };
 
 class LightThread {
   public:
@@ -90,11 +91,11 @@ class LightThread {
     bool cliDone = false;
     bool cliFailed = false;
     unsigned long cliCommandStart = 0;
-    unsigned long cliCommandTimeout = 1000;
+    unsigned long cliCommandTimeout = LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS;
 
 
     
-    bool startCliCommand(const String& command, const String& expected, unsigned long timeoutMs = 1000);
+    bool startCliCommand(const String& command, const String& expected, unsigned long timeoutMs = LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
     void updateCliCommand();
     bool cliCommandDone();
     bool cliCommandFailed();
@@ -152,10 +153,8 @@ class LightThread {
     void handleJoinerSeekingLeader();
     void handleJoinerFactoryReset();
 
-    int getJoinerSetupCommandCount() const;
-
-    String getJoinerSetupCommand(int step);
-    bool runJoinerSetupSequence(int &step, const char *logPrefix);
+    bool runCliCommandList(const String commands[], int commandCount, int& step, const char* logPrefix);
+    int commandCountFromBytes(const String commands[], int byteSize);
 
     void sendHeartbeatIfDue();
 

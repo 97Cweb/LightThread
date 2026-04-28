@@ -1,16 +1,16 @@
 #include "LightThread.h"
 
 // Constructor: sets initial state and configures button pin
-LightThread::LightThread() : buttonPin(BUTTON_PIN), state(State::INIT) {
-    pinMode(buttonPin, INPUT_PULLUP);
+LightThread::LightThread() : buttonPin(LIGHTTHREAD_DEFAULT_BUTTON_PIN), state(State::INIT) {
+    pinMode(LIGHTTHREAD_DEFAULT_BUTTON_PIN, INPUT_PULLUP);
 }
 
 // Begin routine: initializes CLI, resets state machine
 void LightThread::begin() {
-    logLightThread(LT_LOG_INFO, "LightThread begin()");
+    logLightThread(LIGHTTHREAD_LOG_INFO, "LightThread begin()");
     OThread.begin(false);    // Start CLI interface (non-blocking)
     OThreadCLI.begin();
-    OThreadCLI.setTimeout(250); // Set CLI read timeout
+    OThreadCLI.setTimeout(LIGHTTHREAD_CLI_SERIAL_TIMEOUT_MS); // Set CLI read timeout
     setState(State::INIT);      // Enter INIT state
 }
 
@@ -27,7 +27,7 @@ void LightThread::update() {
 // Sets the current FSM state and resets its entry timer
 void LightThread::setState(State newState) {
     if(state != newState) {
-        logLightThread(LT_LOG_INFO, "State transition: %d → %d", static_cast<int>(state),
+        logLightThread(LIGHTTHREAD_LOG_INFO, "State transition: %d → %d", static_cast<int>(state),
                        static_cast<int>(newState));
         state = newState;
         stateEntryTime = millis();
@@ -92,7 +92,7 @@ void LightThread::processState() {
         handleError();
         break;
     default:
-        logLightThread(LT_LOG_WARN, "Unknown state");
+        logLightThread(LIGHTTHREAD_LOG_WARN, "Unknown state");
         break;
     }
 }
@@ -113,56 +113,45 @@ void LightThread::handleInit() {
 
         if(role != Role::LEADER){
             if(loadLeaderInfo(leaderIp, tmp)) {
-                logLightThread(LT_LOG_INFO, "INIT: Joiner has saved leader info: %s",
+                logLightThread(LIGHTTHREAD_LOG_INFO, "INIT: Joiner has saved leader info: %s",
                                leaderIp.c_str());
                 setState(State::JOINER_RECONNECT);
             } 
             else {
-                logLightThread(LT_LOG_INFO, "INIT: No saved leader info, standby");
+                logLightThread(LIGHTTHREAD_LOG_INFO, "INIT: No saved leader info, standby");
                 setState(State::STANDBY);
             }
             return;
         }
-        logLightThread(LT_LOG_INFO, "LEADER detected. Bootstrapping network setup...");
+        logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER detected. Bootstrapping network setup...");
     }
 
     if (role != Role::LEADER) return;
 
-    const String commands[] = {
+
+    const String leaderSetupCommands[] = {
         "dataset init new",
-        "dataset channel " + String(configuredChannel),
-        "dataset panid " + configuredPanid,
-        "dataset networkkey 00112233445566778899aabbccddeeff",
-        "dataset meshlocalprefix " + configuredPrefix,
+        String("dataset channel ") + configuredChannel,
+        String("dataset panid ") + configuredPanid,
+        String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,
+        String("dataset meshlocalprefix ") + configuredPrefix,
         "dataset commit active",
         "ifconfig up",
         "thread start"
     };
 
-    const int commandCount = sizeof(commands) / sizeof(commands[0]);
+    const int leaderSetupCommandCount =
+        commandCountFromBytes(leaderSetupCommands, sizeof(leaderSetupCommands));
 
-    if (cliCommandFailed()) {
-        cliFailed = false;
-        logLightThread(LT_LOG_ERROR, "INIT: CLI command failed");
-        setState(State::ERROR);
-        return;
-    }
-
-    if (cliCommandDone()) {
-        cliDone = false;
-        leaderInitStep++;
-
-        if (leaderInitStep >= commandCount) {
+    if(role == Role::LEADER) {
+        if(runCliCommandList(
+            leaderSetupCommands,
+            leaderSetupCommandCount,
+            leaderInitStep,
+            "LEADER_INIT"
+        )) {
             setState(State::LEADER_WAIT_NETWORK);
-            return;
         }
-
-        startCliCommand(commands[leaderInitStep], "Done", 2000);
-        return;
-    }
-
-    if (!cliBusy) {
-        startCliCommand(commands[leaderInitStep], "Done", 2000);
     }
 
 }
@@ -173,14 +162,14 @@ void LightThread::handleStandby() {
         return;
 
     static unsigned long lastCheck = 0;
-    if(millis() - lastCheck < 5000)
+    if(millis() - lastCheck < LIGHTTHREAD_CLI_STATE_CHECK_INTERVAL_MS)
         return;
     lastCheck = millis();
 
     unsigned long now = millis();
     for(auto it = joinerHeartbeatMap.begin(); it != joinerHeartbeatMap.end();) {
-        if(now - it->second > 15000) {
-            logLightThread(LT_LOG_WARN, "Joiner %s timed out — removing from heartbeat map",
+        if(now - it->second > LIGHTTHREAD_HEARTBEAT_TIMEOUT_MS) {
+            logLightThread(LIGHTTHREAD_LOG_WARN, "Joiner %s timed out — removing from heartbeat map",
                            it->first.c_str());
             it = joinerHeartbeatMap.erase(it);
         } else {
@@ -202,26 +191,26 @@ void LightThread::handleButton() {
     if(isPressed && !buttonPressed) {
         buttonPressed = true;
         pressStart = millis();
-        logLightThread(LT_LOG_INFO, "Button press started");
+        logLightThread(LIGHTTHREAD_LOG_INFO, "Button press started");
 
     } else if(!isPressed && buttonPressed) {
         buttonPressed = false;
         unsigned long duration = millis() - pressStart;
 
-        if(duration < 50) {
-            logLightThread(LT_LOG_INFO, "Ignored press (debounce)");
+        if(duration < LIGHTTHREAD_BUTTON_DEBOUNCE_MS) {
+            logLightThread(LIGHTTHREAD_LOG_INFO, "Ignored press (debounce)");
             return;
         }
 
-        if(duration >= 3000) {
+        if(duration >= LIGHTTHREAD_BUTTON_LONG_PRESS_MS) {
             // Long press = factory reset (for joiners only)
-            logLightThread(LT_LOG_INFO, "Long press");
+            logLightThread(LIGHTTHREAD_LOG_INFO, "Long press");
             if(role == Role::JOINER) {
                 setState(State::JOINER_FACTORY_RESET);
             }
         } else {
             // Short press = trigger pairing
-            logLightThread(LT_LOG_INFO, "Short press");
+            logLightThread(LIGHTTHREAD_LOG_INFO, "Short press");
             if(state == State::STANDBY) {
                 setState(role == Role::LEADER ? State::COMMISSIONER_START : State::JOINER_START);
             }
@@ -236,11 +225,11 @@ void LightThread::updateLighting() {
     static bool ledOn = false;
 
     auto set = [](int r, int g, int b) {
-        rgbLedWrite(RGB_BUILTIN, g, r, b); // Assume GRB
+        rgbLedWrite(RGB_BUILTIN, g, r, b); // Assume GRB, TODO: set to RGB when using new boards
     };
 
     auto blink = [&](int r, int g, int b) {
-        if(millis() - lastBlink > 500) {
+        if(millis() - lastBlink > LIGHTTHREAD_LED_BLINK_INTERVAL_MS) {
             ledOn = !ledOn;
             lastBlink = millis();
         }
