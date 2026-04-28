@@ -62,9 +62,10 @@ constexpr uint8_t LIGHTTHREAD_UDP_HEADER_BYTES = 1;
 constexpr uint64_t LIGHTTHREAD_FNV1A_OFFSET_BASIS = 0xcbf29ce484222325ULL;
 constexpr uint64_t LIGHTTHREAD_FNV1A_PRIME = 1099511628211ULL;
 
-
 constexpr const char* LIGHTTHREAD_CLI_UDP_FROM_MARKER = "bytes from ";
-
+constexpr const char* LIGHTTHREAD_CLI_MLEID_COMMAND = "ipaddr mleid";
+constexpr const char* LIGHTTHREAD_CLI_DONE = "Done";
+constexpr const char* LIGHTTHREAD_THREAD_MODE = "rn";
 
 constexpr const char* LIGHTTHREAD_MESH_LOCAL_PREFIX_START = "fd";
 constexpr const char* LIGHTTHREAD_LINK_LOCAL_PREFIX_START = "fe80";
@@ -72,3 +73,4 @@ constexpr const char* LIGHTTHREAD_LINK_LOCAL_PREFIX_START = "fe80";
 
 constexpr const char* LIGHTTHREAD_HASH_FORMAT = "%016llx";
 constexpr const char* LIGHTTHREAD_HEX_CHARS = "0123456789abcdef";
+

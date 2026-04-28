@@ -173,7 +173,7 @@ void LightThread::handleStandby() {
         return;
 
     static unsigned long lastCheck = 0;
-    if(millis() - lastCheck < LIGHTTHREAD_CLI_STATE_CHECK_RATE_MS)
+    if(millis() - lastCheck < LIGHTTHREAD_CLI_STATE_CHECK_INTERVAL_MS)
         return;
     lastCheck = millis();
 

@@ -40,7 +40,7 @@ void LightThread::handleLeaderWaitNetwork() {
 
     switch(step){
         case QUERY_STATE:
-            if(timeInState()-lastCheck < LIGHTTHREAD_CLI_STATE_CHECK_RATE_MS) return;
+            if(timeInState()-lastCheck < LIGHTTHREAD_CLI_STATE_CHECK_INTERVAL_MS) return;
             lastCheck = timeInState();
             if(startCliCommand("state","",LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS)){
                 step = WAIT_STATE_RESPONSE;
@@ -129,7 +129,7 @@ void LightThread::handleCommissionerActive() {
     static unsigned long lastBroadcast = 0;
 
     // Broadcast PAIRING signal
-    if(millis() - lastBroadcast > LIGHTTHREAD_LEADER_BROADCAST_RATE_MS) {
+    if(millis() - lastBroadcast > LIGHTTHREAD_LEADER_BROADCAST_INTERVAL_MS) {
         lastBroadcast = millis();
 
         std::vector<uint8_t> emptyPayload;

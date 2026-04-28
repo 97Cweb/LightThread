@@ -153,10 +153,8 @@ class LightThread {
     void handleJoinerSeekingLeader();
     void handleJoinerFactoryReset();
 
-    int getJoinerSetupCommandCount() const;
-
-    String getJoinerSetupCommand(int step);
-    bool runJoinerSetupSequence(int &step, const char *logPrefix);
+    bool runCliCommandList(const String commands[], int commandCount, int& step, const char* logPrefix);
+    int commandCount(const String commands[], int byteSize);
 
     void sendHeartbeatIfDue();
 
