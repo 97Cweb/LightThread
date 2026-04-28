@@ -154,7 +154,7 @@ class LightThread {
     void handleJoinerFactoryReset();
 
     bool runCliCommandList(const String commands[], int commandCount, int& step, const char* logPrefix);
-    int commandCount(const String commands[], int byteSize);
+    int commandCountFromBytes(const String commands[], int byteSize);
 
     void sendHeartbeatIfDue();
 

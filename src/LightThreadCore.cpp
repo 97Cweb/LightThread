@@ -128,41 +128,30 @@ void LightThread::handleInit() {
 
     if (role != Role::LEADER) return;
 
-    const String commands[] = {
+
+    const String leaderSetupCommands[] = {
         "dataset init new",
-        "dataset channel " + String(configuredChannel),
-        "dataset panid " + configuredPanid,
+        String("dataset channel ") + configuredChannel,
+        String("dataset panid ") + configuredPanid,
         String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,
-        "dataset meshlocalprefix " + configuredPrefix,
+        String("dataset meshlocalprefix ") + configuredPrefix,
         "dataset commit active",
         "ifconfig up",
         "thread start"
     };
 
-    const int commandCount = sizeof(commands) / sizeof(commands[0]);
+    const int leaderSetupCommandCount =
+        commandCountFromBytes(leaderSetupCommands, sizeof(leaderSetupCommands));
 
-    if (cliCommandFailed()) {
-        cliFailed = false;
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "INIT: CLI command failed");
-        setState(State::ERROR);
-        return;
-    }
-
-    if (cliCommandDone()) {
-        cliDone = false;
-        leaderInitStep++;
-
-        if (leaderInitStep >= commandCount) {
+    if(role == Role::LEADER) {
+        if(runCliCommandList(
+            leaderSetupCommands,
+            leaderSetupCommandCount,
+            leaderInitStep,
+            "LEADER_INIT"
+        )) {
             setState(State::LEADER_WAIT_NETWORK);
-            return;
         }
-
-        startCliCommand(commands[leaderInitStep], "Done", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
-        return;
-    }
-
-    if (!cliBusy) {
-        startCliCommand(commands[leaderInitStep], "Done", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
     }
 
 }

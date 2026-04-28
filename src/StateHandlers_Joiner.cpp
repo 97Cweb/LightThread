@@ -1,54 +1,5 @@
 #include "LightThread.h"
 
-
-bool LightThread::runCliCommandList(
-    const String commands[],
-    int commandCount,
-    int& step,
-    const char* logPrefix
-) {
-    if(cliCommandFailed()) {
-        cliFailed = false;
-
-        logLightThread(
-            LIGHTTHREAD_LOG_ERROR,
-            "%s: CLI command failed at step %d",
-            logPrefix,
-            step
-        );
-
-        setState(State::ERROR);
-        return false;
-    }
-
-    if(cliCommandDone()) {
-        cliDone = false;
-
-        if(commands[step] == LIGHTTHREAD_CLI_MLEID_COMMAND) {
-            captureMyIpFromResponse(getCliResponse());
-        }
-
-        step++;
-
-        if(step >= commandCount) {
-            return true;
-        }
-    }
-
-    if(!cliBusy) {
-        const String& command = commands[step];
-
-        const char* expected =
-            command == LIGHTTHREAD_CLI_MLEID_COMMAND
-                ? ""
-                : LIGHTTHREAD_CLI_DONE;
-
-        startCliCommand(command, expected, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
-    }
-
-    return false;
-}
-
 // Starts the joiner process by configuring dataset and launching join
 void LightThread::handleJoinerStart() {
     enum JoinerStartStep {
@@ -80,7 +31,7 @@ void LightThread::handleJoinerStart() {
         LIGHTTHREAD_CLI_MLEID_COMMAND
     };
 
-    const int setupCommandCount = commandCount(setupCommands, sizeof(setupCommands));
+    const int setupCommandCount = commandCountFromBytes(setupCommands, sizeof(setupCommands));
 
     if(justEntered) {
         justEntered = false;
@@ -341,7 +292,7 @@ void LightThread::handleJoinerPaired() {
                     logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_PAIRED: Setting mode rdn");
 
                     step = SET_MODE_RDN;
-                    startCliCommand("mode rdn", "Done", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
+                    startCliCommand("mode rdn", LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
                 } else {
                     logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_PAIRED: Already in rdn mode");
 
@@ -403,7 +354,7 @@ void LightThread::handleJoinerReconnect() {
         LIGHTTHREAD_CLI_MLEID_COMMAND
     };
 
-    const int setupCommandCount = commandCount(setupCommands, sizeof(setupCommands));
+    const int setupCommandCount = commandCountFromBytes(setupCommands, sizeof(setupCommands));
 
     if(justEntered) {
         justEntered = false;
@@ -615,6 +566,6 @@ void LightThread::handleJoinerFactoryReset() {
     }
 
     if(!cliBusy) {
-        startCliCommand(commands[step], "Done", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
+        startCliCommand(commands[step], LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
     }
 }

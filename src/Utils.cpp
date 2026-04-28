@@ -75,6 +75,6 @@ void LightThread::logLightThread(LightThreadLogLevel level, const char *fmt, ...
     }
 }
 
-int LightThread::commandCount(const String commands[], int byteSize) {
+int LightThread::commandCountFromBytes(const String commands[], int byteSize) {
         return byteSize / sizeof(commands[0]);
     }

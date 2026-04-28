@@ -56,7 +56,7 @@ void LightThread::handleLeaderWaitNetwork() {
                 logLightThread(LIGHTTHREAD_LOG_INFO,
                                 "LEADER_WAIT_NETWORK: Thread is up in state: %s",
                                 response.c_str());
-                startCliCommand("udp open", "Done", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
+                startCliCommand("udp open", LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
                 step = UDP_OPEN;
             }
             else{
@@ -69,7 +69,7 @@ void LightThread::handleLeaderWaitNetwork() {
             if(!cliCommandDone()) return;
             
             cliDone = false;
-            startCliCommand(String("udp bind :: ") + LIGHTTHREAD_UDP_PORT, "Done",LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
+            startCliCommand(String("udp bind :: ") + LIGHTTHREAD_UDP_PORT, LIGHTTHREAD_CLI_DONE,LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
 
             step = UDP_BIND;
             break;
@@ -77,7 +77,7 @@ void LightThread::handleLeaderWaitNetwork() {
             if(!cliCommandDone()) return;
 
             cliDone = false;
-            startCliCommand("ipaddr mleid", "",LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
+            startCliCommand(LIGHTTHREAD_CLI_MLEID_COMMAND, "",LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
             step = GET_MLEID;
             break;
 
@@ -102,7 +102,7 @@ void LightThread::handleCommissionerStart() {
         justEntered = false;
         logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_START: starting commissioner...");
 
-        if(!startCliCommand("commissioner start", "Done", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS)){
+        if(!startCliCommand("commissioner start", LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS)){
             logLightThread(LIGHTTHREAD_LOG_WARN, "COMMISSIONER_START: CLI busy");
             return;
         }
@@ -158,7 +158,7 @@ void LightThread::handleCommissionerStopping(){
         justEntered = false;
         logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_STOPPING: stopping commissioner...");
         
-        if(!startCliCommand("commissioner stop", "Done", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS)) {
+        if(!startCliCommand("commissioner stop", LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS)) {
             logLightThread(LIGHTTHREAD_LOG_WARN, "COMMISSIONER_STOPPING: CLI busy");
             return;
         }

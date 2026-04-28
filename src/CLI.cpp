@@ -79,8 +79,8 @@ bool LightThread::processCLI(char c, String &multiline, bool &isUDP, String &lin
         // Accumulate multi-line CLI output
         multiline += line + "\n";
 
-        // End multi-line output when "Done" is detected
-        if(line.indexOf("Done") != -1) {
+        // End multi-line output when "Done" (LIGHTTHREAD_CLI_DONE) is detected
+        if(line.indexOf(LIGHTTHREAD_CLI_DONE) != -1) {
             isUDP = false;
             lineOut = multiline;
             multiline = "";
@@ -143,4 +143,52 @@ String LightThread::getCliResponse(){
 void LightThread::clearCliResult(){
     cliDone = false;
     cliFailed = false;
+}
+
+bool LightThread::runCliCommandList(
+    const String commands[],
+    int commandCount,
+    int& step,
+    const char* logPrefix
+) {
+    if(cliCommandFailed()) {
+        cliFailed = false;
+
+        logLightThread(
+            LIGHTTHREAD_LOG_ERROR,
+            "%s: CLI command failed at step %d",
+            logPrefix,
+            step
+        );
+
+        setState(State::ERROR);
+        return false;
+    }
+
+    if(cliCommandDone()) {
+        cliDone = false;
+
+        if(commands[step] == LIGHTTHREAD_CLI_MLEID_COMMAND) {
+            captureMyIpFromResponse(getCliResponse());
+        }
+
+        step++;
+
+        if(step >= commandCount) {
+            return true;
+        }
+    }
+
+    if(!cliBusy) {
+        const String& command = commands[step];
+
+        const char* expected =
+            command == LIGHTTHREAD_CLI_MLEID_COMMAND
+                ? ""
+                : LIGHTTHREAD_CLI_DONE;
+
+        startCliCommand(command, expected, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
+    }
+
+    return false;
 }
