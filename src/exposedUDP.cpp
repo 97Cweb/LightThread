@@ -10,7 +10,7 @@ void LightThread::handleNormalUdpMessage(const String &srcIp,
     if (udpCallback) {
         udpCallback(srcIp, payload);
     } else {
-        logLightThread(LT_LOG_WARN, "ExposedUDP: No handler registered for NORMAL packets");
+        logLightThread(LIGHTTHREAD_LOG_WARN, "ExposedUDP: No handler registered for NORMAL packets");
     }
 }
 
@@ -19,7 +19,7 @@ void LightThread::handleNormalUdpMessage(const String &srcIp,
 void LightThread::registerUdpReceiveCallback(
     std::function<void(const String &, const std::vector<uint8_t> &)> fn) {
     udpCallback = fn;
-    logLightThread(LT_LOG_INFO, "ExposedUDP: UDP callback registered");
+    logLightThread(LIGHTTHREAD_LOG_INFO, "ExposedUDP: UDP callback registered");
 }
 
 // Registers a callback that is triggered when a new joiner is detected.
@@ -27,12 +27,12 @@ void LightThread::registerUdpReceiveCallback(
 void LightThread::registerJoinCallback(
     std::function<void(const String &ip, const String &hashmac)> cb) {
     joinCallback = cb;
-    logLightThread(LT_LOG_INFO, "Join callback registered");
+    logLightThread(LIGHTTHREAD_LOG_INFO, "Join callback registered");
 }
 
 // Sends a UDP packet to the destination IP.
 bool LightThread::sendUdp(const String &destIp, const std::vector<uint8_t> &userPayload) {
-    return sendUdpPacket(MessageType::NORMAL, userPayload, destIp, 12345);
+    return sendUdpPacket(MessageType::NORMAL, userPayload, destIp, LIGHTTHREAD_UDP_PORT);
 }
 
 // Returns the last time (in millis) a heartbeat was received from the given IP.
