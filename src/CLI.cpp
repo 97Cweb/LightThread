@@ -117,6 +117,87 @@ bool LightThread::startCliCommand(const String& command,
     return true;
 }
 
+void LightThread::resetCliSteps() {
+    cliStepIndex = 0;
+    cliStepLastRun = 0;
+}
+
+bool LightThread::runCliSteps(const CliStep* steps, uint8_t count) {
+    if(cliStepIndex >= count) {
+        return true;
+    }
+
+    const CliStep& step = steps[cliStepIndex];
+
+    // First consume any completed command result.
+    // Important: completed commands have cliBusy == false and cliDone == true.
+    if(cliCommandDone() || cliCommandFailed()) {
+        String response;
+        CliResult result = consumeCliResult(&response);
+
+        if(result == CliResult::Failed) {
+            return false;
+        }
+
+        if(step.requiredText.length() > 0) {
+            if(!responseContainsAny(response, step.requiredText.c_str())) {
+                return false; // stay on same step and poll again later
+            }
+        }
+
+        pendingCliResponse = response; // preserve final useful response
+        cliStepIndex++;
+
+        return cliStepIndex >= count;
+    }
+
+    // If a command is still running, wait.
+    if(cliBusy) {
+        return false;
+    }
+
+    // Start current step.
+    if(step.requiredText.length() > 0) {
+        if(millis() - cliStepLastRun < LIGHTTHREAD_CLI_STATE_CHECK_INTERVAL_MS) {
+            return false;
+        }
+    }
+
+    cliStepLastRun = millis();
+
+    String expected = LIGHTTHREAD_CLI_DONE;
+
+    if(step.requiredText.length() > 0) {
+        expected = "";
+    }
+
+    startCliCommand(step.command,
+                    expected,
+                    LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
+
+    return false;
+}
+
+LightThread::CliResult LightThread::consumeCliResult(String* response) {
+    if(cliCommandFailed()) {
+        cliFailed = false;
+        cliDone = false;
+        return CliResult::Failed;
+    }
+
+    if(cliCommandDone()) {
+        cliDone = false;
+
+        if(response != nullptr) {
+            *response = getCliResponse();
+        }
+
+        return CliResult::Done;
+    }
+
+    return CliResult::Waiting;
+}
+
 void LightThread::updateCliCommand(){
     if(!cliBusy) return;
 
@@ -145,50 +226,3 @@ void LightThread::clearCliResult(){
     cliFailed = false;
 }
 
-bool LightThread::runCliCommandList(
-    const String commands[],
-    int commandCount,
-    int& step,
-    const char* logPrefix
-) {
-    if(cliCommandFailed()) {
-        cliFailed = false;
-
-        logLightThread(
-            LIGHTTHREAD_LOG_ERROR,
-            "%s: CLI command failed at step %d",
-            logPrefix,
-            step
-        );
-
-        setState(State::ERROR);
-        return false;
-    }
-
-    if(cliCommandDone()) {
-        cliDone = false;
-
-        if(commands[step] == LIGHTTHREAD_CLI_MLEID_COMMAND) {
-            captureMyIpFromResponse(getCliResponse());
-        }
-
-        step++;
-
-        if(step >= commandCount) {
-            return true;
-        }
-    }
-
-    if(!cliBusy) {
-        const String& command = commands[step];
-
-        const char* expected =
-            command == LIGHTTHREAD_CLI_MLEID_COMMAND
-                ? ""
-                : LIGHTTHREAD_CLI_DONE;
-
-        startCliCommand(command, expected, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
-    }
-
-    return false;
-}

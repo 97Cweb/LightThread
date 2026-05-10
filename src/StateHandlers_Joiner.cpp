@@ -2,42 +2,38 @@
 
 // Starts the joiner process by configuring dataset and launching join
 void LightThread::handleJoinerStart() {
-    enum JoinerStartStep {
-        RUN_SETUP,
-        START_JOINER,
-        START_THREAD
-    };
 
-    static JoinerStartStep startStep = RUN_SETUP;
-    static int setupStep = 0;
+     const LightThread::CliStep setupCommands[] = {
+            {"dataset clear",                                                               ""},
+            {"dataset init new",                                                            ""},
+            {String("dataset panid ") + configuredPanid,                                    ""},
+            {String("dataset channel ") + configuredChannel,                                ""},
+            {String("dataset meshlocalprefix ") + configuredPrefix,                         ""},
+            {String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,                       ""},
+            {String("dataset networkname ") + LIGHTTHREAD_NETWORK_NAME,                     ""},
+            {String("mode ") + LIGHTTHREAD_THREAD_MODE,                                     ""},
+            {String("routerselectionjitter ") + LIGHTTHREAD_ROUTER_SELECTION_JITTER,        ""},
+            {String("routerupgradethreshold ") + LIGHTTHREAD_ROUTER_UPGRADE_THRESHOLD,      ""},
+            {String("routerdowngradethreshold ") + LIGHTTHREAD_ROUTER_DOWNGRADE_THRESHOLD,  ""},
+            {"dataset commit active",                                                       ""},
+            {"ifconfig up",                                                                 ""},
+            {"udp close",                                                                   ""},
+            {"udp open",                                                                    ""},
+            {String("udp bind :: ") + LIGHTTHREAD_UDP_PORT,                                 ""},
+            {"ipaddr mleid",                                                                ""}
+        };     
 
-    const String setupCommands[] = {
-        "dataset clear",
-        "dataset init new",
-        String("dataset panid ") + configuredPanid,
-        String("dataset channel ") + configuredChannel,
-        String("dataset meshlocalprefix ") + configuredPrefix,
-        String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,
-        String("dataset networkname ") + LIGHTTHREAD_NETWORK_NAME,
-        String("mode ") + LIGHTTHREAD_THREAD_MODE,
-        String("routerselectionjitter ") + LIGHTTHREAD_ROUTER_SELECTION_JITTER,
-        String("routerupgradethreshold ") + LIGHTTHREAD_ROUTER_UPGRADE_THRESHOLD,
-        String("routerdowngradethreshold ") + LIGHTTHREAD_ROUTER_DOWNGRADE_THRESHOLD,
-        "dataset commit active",
-        "ifconfig up",
-        "udp close",
-        "udp open",
-        String("udp bind :: ") + LIGHTTHREAD_UDP_PORT,
-        LIGHTTHREAD_CLI_MLEID_COMMAND
-    };
+    const LightThread::CliStep postIPCommands[] = {
+            {String("joiner start ") + LIGHTTHREAD_JOINER_PSKD,         ""},
+            {"thread start",                                            ""},
 
-    const int setupCommandCount = commandCountFromBytes(setupCommands, sizeof(setupCommands));
+        };   
 
+    static bool capturedIp = false;
     if(justEntered) {
         justEntered = false;
-
-        startStep = RUN_SETUP;
-        setupStep = 0;
+        resetCliSteps();
+        capturedIp = false;
 
         logLightThread(
             LIGHTTHREAD_LOG_INFO,
@@ -45,118 +41,52 @@ void LightThread::handleJoinerStart() {
         );
     }
 
-    switch(startStep) {
-        case RUN_SETUP:
-            if(runCliCommandList(setupCommands, setupCommandCount, setupStep, "JOINER_START")) {
-                logLightThread(
-                    LIGHTTHREAD_LOG_INFO,
-                    "JOINER_START: setup complete, starting joiner"
-                );
-
-                startStep = START_JOINER;
-            }
+    if(!capturedIp){
+        if(!runCliSteps(setupCommands, 17)) {
             return;
+        }
+        captureMyIpFromResponse(pendingCliResponse);
+        capturedIp = true;
+        resetCliSteps();
 
-        case START_JOINER:
-            if(cliCommandFailed()) {
-                cliFailed = false;
-                logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_START: joiner start failed");
-                setState(State::ERROR);
-                return;
-            }
-
-            if(cliCommandDone()) {
-                cliDone = false;
-                startStep = START_THREAD;
-                return;
-            }
-
-            if(!cliBusy) {
-                startCliCommand(
-                    String("joiner start ") + LIGHTTHREAD_JOINER_PSKD,
-                    LIGHTTHREAD_CLI_DONE,
-                    LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS
-                );
-            }
-            return;
-
-        case START_THREAD:
-            if(cliCommandFailed()) {
-                cliFailed = false;
-                logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_START: thread start failed");
-                setState(State::ERROR);
-                return;
-            }
-
-            if(cliCommandDone()) {
-                cliDone = false;
-
-                logLightThread(
-                    LIGHTTHREAD_LOG_INFO,
-                    "JOINER_START: thread started, scanning joiner state"
-                );
-
-                setState(State::JOINER_SCAN);
-                return;
-            }
-
-            if(!cliBusy) {
-                startCliCommand(
-                    "thread start",
-                    LIGHTTHREAD_CLI_DONE,
-                    LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS
-                );
-            }
-            return;
     }
+    
+
+    if(!runCliSteps(postIPCommands, 2)) {
+        return;
+    }
+
+    
+    setState(State::JOINER_SCAN);
+
 }
 
 // Checks for joiner success/failure and transitions accordingly
 void LightThread::handleJoinerScan() {
-    static unsigned long lastCheck = 0;
+    const LightThread::CliStep joinerScanCommands[] = {
+            {"joiner state", "~Join failed;success|Idle"}
+        };
 
     if(justEntered) {
         justEntered = false;
-        lastCheck = 0;
-        logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_SCAN: checking joiner state...");
+        resetCliSteps();
     }
 
-
-    if(cliCommandFailed()){
-        cliFailed = false;
-        logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_SCAN: Failed to get joiner state");
-        lastCheck = timeInState();
+    if(!runCliSteps(joinerScanCommands, 1)) {
         return;
     }
 
-    if(cliCommandDone()){
-        cliDone = false;
-        String response = getCliResponse();
-        logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER state response: %s", response.c_str());
-
-        if(response.indexOf("Join failed") == -1 && (response.indexOf("success") != -1 || response.indexOf("Idle") != -1)){
-            logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_SCAN: Joiner successfully paired");
-            setState(State::JOINER_WAIT_BROADCAST);
-            return;
-        }
-        lastCheck = timeInState();
-        return;
-    }
-
-    if(!cliBusy && timeInState() - lastCheck >= LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS){
-        startCliCommand("joiner state", "", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
-    }
+    setState(State::JOINER_WAIT_BROADCAST);
 }
 
 // Waits for leader’s Pairing Broadcast
 void LightThread::handleJoinerWaitBroadcast() {
     if(justEntered) {
         justEntered = false;
+        resetCliSteps();
+
         logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_WAIT_BROADCAST: Listening for leader broadcast...");
     }
-
-    if(!inState(State::JOINER_WAIT_BROADCAST))
-        return;
 
     // Timeout fallback
     if(millis() - stateEntryTime > LIGHTTHREAD_JOINER_START_TIMEOUT_MS) {
@@ -170,6 +100,8 @@ void LightThread::handleJoinerWaitBroadcast() {
 void LightThread::handleJoinerWaitAck() {
     if(justEntered) {
         justEntered = false;
+        resetCliSteps();
+
         logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_WAIT_RESPONSE: Waiting for PAIRING_RESPONSE...");
     }
 
@@ -182,27 +114,23 @@ void LightThread::handleJoinerWaitAck() {
 // Fully paired state — fires join callback once, waits for attach to settle,
 // then optionally escalates to rdn mode.
 void LightThread::handleJoinerPaired() {
-    enum PairedStep {
-        CHECK_STATE,
-        WAIT_BEFORE_MODE_CHECK,
-        CHECK_MODE,
-        SET_MODE_RDN,
-        READY
-    };
-
-    static PairedStep step = CHECK_STATE;
-    static unsigned long lastStateQueryTime = 0;
-    static unsigned long attachedTime = 0;
     static bool firedJoinCallback = false;
+    static bool verifiedAttached = false;
+
+
+    const LightThread::CliStep pairedCheckCommands[] = {
+            {"state", "child|router"}
+
+        };
+
 
 
     if(justEntered) {
         justEntered = false;
+        resetCliSteps();
 
-        step = CHECK_STATE;
-        lastStateQueryTime = 0;
-        attachedTime = 0;
         firedJoinCallback = false;
+        verifiedAttached = false;
 
         lastHeartbeatSent = millis();
         lastHeartbeatEcho = millis();
@@ -210,272 +138,90 @@ void LightThread::handleJoinerPaired() {
         logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_PAIRED: Verifying Thread state...");
     }
 
-    if(cliCommandFailed()) {
-        cliFailed = false;
+    // Phase 1: verify we are attached
+    if(!verifiedAttached) {
+        if(!runCliSteps(pairedCheckCommands, 1)) {
+            return;
+        }
 
-        logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_PAIRED: CLI command failed, retrying state check");
-
-        step = CHECK_STATE;
-        lastStateQueryTime = 0;
-        return;
+        verifiedAttached = true;
+        resetCliSteps();
     }
 
-    switch(step) {
-        case CHECK_STATE:
-            if(cliCommandDone()) {
-                cliDone = false;
+    if(!firedJoinCallback) {
+        firedJoinCallback = true;
+        resetCliSteps();
 
-                String stateResp = getCliResponse();
-                stateResp.toLowerCase();
+        if(joinCallback) {
+            String hashStr = hashToString(generateMacHash());
 
-                if(stateResp.indexOf("child") != -1 || stateResp.indexOf("router") != -1) {
-                    logLightThread(LIGHTTHREAD_LOG_INFO,
-                                   "JOINER_PAIRED: Attached: %s",
-                                   stateResp.c_str());
-
-                    if(!firedJoinCallback) {
-                        firedJoinCallback = true;
-
-                        if(joinCallback) {
-                            String hashStr = hashToString(generateMacHash());
-
-                            joinCallback(leaderIp, hashStr);
-
-                            logLightThread(LIGHTTHREAD_LOG_INFO,
-                                           "JOINER_PAIRED: Fired joinCallback with IP %s and hash %s",
-                                           leaderIp.c_str(),
-                                           hashStr.c_str());
-                        }
-                    }
-
-                    attachedTime = millis();
-                    step = WAIT_BEFORE_MODE_CHECK;
-                    return;
-                }
-
-                logLightThread(LIGHTTHREAD_LOG_WARN,
-                               "JOINER_PAIRED: Not attached yet: %s",
-                               stateResp.c_str());
-
-                lastStateQueryTime = millis();
-                return;
-            }
-
-            if(!cliBusy && millis() - lastStateQueryTime >= LIGHTTHREAD_STATE_CHECK_INTERVAL_MS) {
-                lastStateQueryTime = millis();
-                startCliCommand("state", "", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
-            }
-            return;
-
-        case WAIT_BEFORE_MODE_CHECK:
-            if(millis() - attachedTime < LIGHTTHREAD_MODE_ESCALATION_DELAY_MS) {
-                return;
-            }
+            joinCallback(leaderIp, hashStr);
 
             logLightThread(LIGHTTHREAD_LOG_INFO,
-                           "JOINER_PAIRED: Checking mode after attach settle delay");
-
-            step = CHECK_MODE;
-            startCliCommand("mode", "r", LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
-            return;
-
-        case CHECK_MODE:
-            if(!cliCommandDone()) return;
-
-            {
-                cliDone = false;
-
-                String modeResp = getCliResponse();
-                modeResp.toLowerCase();
-
-                if(modeResp.indexOf("d") == -1) {
-                    logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_PAIRED: Setting mode rdn");
-
-                    step = SET_MODE_RDN;
-                    startCliCommand("mode rdn", LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
-                } else {
-                    logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_PAIRED: Already in rdn mode");
-
-                    step = READY;
-                    lastHeartbeatSent = millis();
-                    lastHeartbeatEcho = millis();
-                }
-            }
-            return;
-
-        case SET_MODE_RDN:
-            if(!cliCommandDone()) return;
-
-            cliDone = false;
-
-            logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_PAIRED: mode rdn set");
-
-            step = READY;
+                           "JOINER_PAIRED: Fired joinCallback with IP %s and hash %s",
+                           leaderIp.c_str(),
+                           hashStr.c_str());
             lastHeartbeatSent = millis();
             lastHeartbeatEcho = millis();
-            return;
+        }
+    }    
 
-        case READY:
-            break;
-    }
-
-    // Re-enable after the rdn crash is confirmed fixed.
     sendHeartbeatIfDue();
 }
 
 void LightThread::handleJoinerReconnect() {
-    enum ReconnectStep {
-        RUN_SETUP,
-        START_THREAD,
-        WAIT_FOR_ATTACH
-    };
 
-    static ReconnectStep reconnectStep = RUN_SETUP;
-    static int setupStep = 0;
-    static unsigned long lastStateCheckTime = 0;
+    const LightThread::CliStep reconnectCommands[] = {
+                {"thread stop",                                                                 ""},
+                {"ifconfig down",                                                               ""},
+                {"udp close",                                                                   ""},
+                {String("dataset panid ") + configuredPanid,                                    ""},
+                {String("dataset channel ") + configuredChannel,                                ""},
+                {String("dataset meshlocalprefix ") + configuredPrefix,                         ""},
+                {String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,                       ""},
+                {String("dataset networkname ") + LIGHTTHREAD_NETWORK_NAME,                     ""},
+                {String("mode ") + LIGHTTHREAD_THREAD_MODE,                                     ""},
+                {String("routerselectionjitter ") + LIGHTTHREAD_ROUTER_SELECTION_JITTER,        ""},
+                {String("routerupgradethreshold ") + LIGHTTHREAD_ROUTER_UPGRADE_THRESHOLD,      ""},
+                {String("routerdowngradethreshold ") + LIGHTTHREAD_ROUTER_DOWNGRADE_THRESHOLD,  ""},
+                {"dataset commit active",                                                       ""},
+                {"ifconfig up",                                                                 ""},
+                {"udp open",                                                                    ""},
+                {String("udp bind :: ") + LIGHTTHREAD_UDP_PORT,                                 ""},
+                {"ipaddr mleid",                                                                ""}
+            };
 
-    const String setupCommands[] = {
-        "thread stop",
-        "ifconfig down",
-        "udp close",
-        String("dataset panid ") + configuredPanid,
-        String("dataset channel ") + configuredChannel,
-        String("dataset meshlocalprefix ") + configuredPrefix,
-        String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,
-        String("dataset networkname ") + LIGHTTHREAD_NETWORK_NAME,
-        String("mode ") + LIGHTTHREAD_THREAD_MODE,
-        String("routerselectionjitter ") + LIGHTTHREAD_ROUTER_SELECTION_JITTER,
-        String("routerupgradethreshold ") + LIGHTTHREAD_ROUTER_UPGRADE_THRESHOLD,
-        String("routerdowngradethreshold ") + LIGHTTHREAD_ROUTER_DOWNGRADE_THRESHOLD,
-        "dataset commit active",
-        "ifconfig up",
-        "udp open",
-        String("udp bind :: ") + LIGHTTHREAD_UDP_PORT,
-        LIGHTTHREAD_CLI_MLEID_COMMAND
-    };
-
-    const int setupCommandCount = commandCountFromBytes(setupCommands, sizeof(setupCommands));
-
+     const LightThread::CliStep postIPCommands[] = {
+            {"thread start",    ""},
+            {"state",           "child|router"}
+        };   
+    static bool capturedIp = false;
     if(justEntered) {
         justEntered = false;
-
-        reconnectStep = RUN_SETUP;
-        setupStep = 0;
-        lastStateCheckTime = 0;
-
-        lastHeartbeatSent = millis();
-        lastHeartbeatEcho = millis();
+        resetCliSteps();
+        capturedIp = false;
 
         logLightThread(
             LIGHTTHREAD_LOG_INFO,
-            "JOINER_RECONNECT: configuring dataset and bringing up stack"
+            "JOINER_START: configuring dataset and reconnecting joiner"
         );
     }
-
-    switch(reconnectStep) {
-        case RUN_SETUP:
-            if(runCliCommandList(setupCommands, setupCommandCount, setupStep, "JOINER_RECONNECT")) {
-                reconnectStep = START_THREAD;
-
-                logLightThread(
-                    LIGHTTHREAD_LOG_INFO,
-                    "JOINER_RECONNECT: setup complete, starting Thread"
-                );
-            }
+    if(!capturedIp){
+        if(!runCliSteps(reconnectCommands, 17)) {
             return;
-
-        case START_THREAD:
-            if(cliCommandFailed()) {
-                cliFailed = false;
-
-                logLightThread(
-                    LIGHTTHREAD_LOG_WARN,
-                    "JOINER_RECONNECT: thread start failed"
-                );
-
-                setState(State::STANDBY);
-                return;
-            }
-
-            if(cliCommandDone()) {
-                cliDone = false;
-
-                reconnectStep = WAIT_FOR_ATTACH;
-                lastStateCheckTime = 0;
-
-                logLightThread(
-                    LIGHTTHREAD_LOG_INFO,
-                    "JOINER_RECONNECT: waiting for attach"
-                );
-                return;
-            }
-
-            if(!cliBusy) {
-                startCliCommand(
-                    "thread start",
-                    LIGHTTHREAD_CLI_DONE,
-                    LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS
-                );
-            }
-            return;
-
-        case WAIT_FOR_ATTACH:
-            if(cliCommandFailed()) {
-                cliFailed = false;
-
-                logLightThread(
-                    LIGHTTHREAD_LOG_WARN,
-                    "JOINER_RECONNECT: failed to get state"
-                );
-
-                lastStateCheckTime = millis();
-                return;
-            }
-
-            if(cliCommandDone()) {
-                cliDone = false;
-
-                String resp = getCliResponse();
-                resp.toLowerCase();
-
-                if(resp.indexOf("child") != -1 || resp.indexOf("router") != -1) {
-                    logLightThread(
-                        LIGHTTHREAD_LOG_INFO,
-                        "JOINER_RECONNECT: back in mesh as %s",
-                        resp.c_str()
-                    );
-
-                    setState(State::JOINER_PAIRED);
-                    return;
-                }
-
-                logLightThread(
-                    LIGHTTHREAD_LOG_INFO,
-                    "JOINER_RECONNECT: not attached yet: %s",
-                    resp.c_str()
-                );
-            }
-
-            if(!cliBusy && millis() - lastStateCheckTime >= LIGHTTHREAD_STATE_CHECK_INTERVAL_MS) {
-                lastStateCheckTime = millis();
-
-                startCliCommand(
-                    "state",
-                    "",
-                    LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS
-                );
-            }
-
-            if(timeInState() > LIGHTTHREAD_JOINER_RECONNECT_TIMEOUT_MS) {
-                logLightThread(
-                    LIGHTTHREAD_LOG_WARN,
-                    "JOINER_RECONNECT: timeout, going to standby"
-                );
-
-                setState(State::STANDBY);
-            }
-            return;
+        }
+        
+        captureMyIpFromResponse(pendingCliResponse);
+        capturedIp = true;
+        resetCliSteps();
     }
+
+    if(!runCliSteps(postIPCommands, 2)) {
+        return;
+    }
+
+    
+    setState(State::JOINER_PAIRED);
 }
 
 // Called when actively retrying multicast reconnect
@@ -517,21 +263,18 @@ void LightThread::sendHeartbeatIfDue() {
 }
 
 void LightThread::handleJoinerFactoryReset() {
-    static int step = 0;
-
-    const String commands[] = {
-        "thread stop",
-        "ifconfig down",
-        "udp close",
-        "dataset clear"
-    };
-
-    const int commandCount = sizeof(commands) / sizeof(commands[0]);
+    const LightThread::CliStep joinerClearCommands[] = {
+            {"thread stop",     ""},
+            {"ifconfig down",   ""},
+            {"udp close",       ""},
+            {"dataset clear",   ""},
+        };    
 
     if(justEntered) {
         justEntered = false;
-        step = 0;
+        resetCliSteps();
 
+        
         clearPersistentState();
 
         leaderIp = "";
@@ -542,30 +285,9 @@ void LightThread::handleJoinerFactoryReset() {
         logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_FACTORY_RESET: clearing Thread state");
     }
 
-    if(cliCommandFailed()) {
-        cliFailed = false;
-
-        logLightThread(
-            LIGHTTHREAD_LOG_WARN,
-            "JOINER_FACTORY_RESET: command failed at step %d, continuing",
-            step
-        );
-
-        step++;
-    }
-
-    if(cliCommandDone()) {
-        cliDone = false;
-        step++;
-    }
-
-    if(step >= commandCount) {
-        logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_FACTORY_RESET: complete");
-        setState(State::STANDBY);
+    if(!runCliSteps(joinerClearCommands, 4)) {
         return;
     }
-
-    if(!cliBusy) {
-        startCliCommand(commands[step], LIGHTTHREAD_CLI_DONE, LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
-    }
+    
+    setState(State::STANDBY);
 }

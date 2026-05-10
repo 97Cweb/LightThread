@@ -50,7 +50,9 @@ void LightThread::processState() {
     case State::STANDBY:
         handleStandby();
         break;
-
+    case State::LEADER_INIT:
+        handleLeaderInit();
+        break;
     case State::LEADER_WAIT_NETWORK:
         handleLeaderWaitNetwork();
         break;
@@ -123,37 +125,11 @@ void LightThread::handleInit() {
             }
             return;
         }
-        logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER detected. Bootstrapping network setup...");
-    }
-
-    if (role != Role::LEADER) return;
-
-
-    const String leaderSetupCommands[] = {
-        "dataset init new",
-        String("dataset channel ") + configuredChannel,
-        String("dataset panid ") + configuredPanid,
-        String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,
-        String("dataset meshlocalprefix ") + configuredPrefix,
-        "dataset commit active",
-        "ifconfig up",
-        "thread start"
-    };
-
-    const int leaderSetupCommandCount =
-        commandCountFromBytes(leaderSetupCommands, sizeof(leaderSetupCommands));
-
-    if(role == Role::LEADER) {
-        if(runCliCommandList(
-            leaderSetupCommands,
-            leaderSetupCommandCount,
-            leaderInitStep,
-            "LEADER_INIT"
-        )) {
-            setState(State::LEADER_WAIT_NETWORK);
+        else{
+            logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER detected. Bootstrapping network setup...");
+            setState(State::LEADER_INIT);        
         }
     }
-
 }
 
 // Leader standby: monitor joiner heartbeats and remove stale entries
@@ -244,6 +220,7 @@ void LightThread::updateLighting() {
         set(0, 0, 255);
         break; // blue
 
+    case State::LEADER_INIT:
     case State::LEADER_WAIT_NETWORK:
         blink(255, 165, 0);
         break; // orange blink
