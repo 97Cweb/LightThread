@@ -75,9 +75,6 @@ void LightThread::logLightThread(LightThreadLogLevel level, const char *fmt, ...
     }
 }
 
-int LightThread::commandCountFromBytes(const String commands[], int byteSize) {
-    return byteSize / sizeof(commands[0]);
-}
 
 bool LightThread::responseContainsAny(const String& response,
                                       const char* requiredText) const {

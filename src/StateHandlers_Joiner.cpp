@@ -114,10 +114,8 @@ void LightThread::handleJoinerWaitAck() {
 // Fully paired state — fires join callback once, waits for attach to settle,
 // then optionally escalates to rdn mode.
 void LightThread::handleJoinerPaired() {
-    
-    static unsigned long lastStateQueryTime = 0;
-    static unsigned long attachedTime = 0;
     static bool firedJoinCallback = false;
+    static bool verifiedAttached = false;
 
 
     const LightThread::CliStep pairedCheckCommands[] = {
@@ -125,20 +123,14 @@ void LightThread::handleJoinerPaired() {
 
         };
 
-    const LightThread::CliStep attachedModeCommands[] = {
-            {"mode", "r"},
-            {"mode rdn", ""}
-        };
+
 
     if(justEntered) {
         justEntered = false;
         resetCliSteps();
 
-        
-
-        lastStateQueryTime = 0;
-        attachedTime = 0;
         firedJoinCallback = false;
+        verifiedAttached = false;
 
         lastHeartbeatSent = millis();
         lastHeartbeatEcho = millis();
@@ -146,11 +138,19 @@ void LightThread::handleJoinerPaired() {
         logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_PAIRED: Verifying Thread state...");
     }
 
-    if(!runCliSteps(pairedCheckCommands,1)){
-        return;
+    // Phase 1: verify we are attached
+    if(!verifiedAttached) {
+        if(!runCliSteps(pairedCheckCommands, 1)) {
+            return;
+        }
+
+        verifiedAttached = true;
+        resetCliSteps();
     }
+
     if(!firedJoinCallback) {
         firedJoinCallback = true;
+        resetCliSteps();
 
         if(joinCallback) {
             String hashStr = hashToString(generateMacHash());
@@ -164,11 +164,8 @@ void LightThread::handleJoinerPaired() {
             lastHeartbeatSent = millis();
             lastHeartbeatEcho = millis();
         }
-    }
+    }    
 
-    if(!runCliSteps(attachedModeCommands,1)){
-        return;
-    }
     sendHeartbeatIfDue();
 }
 
@@ -219,7 +216,7 @@ void LightThread::handleJoinerReconnect() {
         resetCliSteps();
     }
 
-    if(!runCliSteps(postIPCommands, 1)) {
+    if(!runCliSteps(postIPCommands, 2)) {
         return;
     }
 
