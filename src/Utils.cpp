@@ -76,5 +76,90 @@ void LightThread::logLightThread(LightThreadLogLevel level, const char *fmt, ...
 }
 
 int LightThread::commandCountFromBytes(const String commands[], int byteSize) {
-        return byteSize / sizeof(commands[0]);
+    return byteSize / sizeof(commands[0]);
+}
+
+bool LightThread::responseContainsAny(const String& response,
+                                      const char* requiredText) const {
+
+    // Rule format:
+    // ";" = AND groups
+    // "|" = OR inside group
+    // "~" = NOT
+    //
+    // Example:
+    // "~Join failed;success|Idle"
+    //
+    // Means:
+    //   response must NOT contain "Join failed"
+    //   AND
+    //   response must contain "success" OR "Idle"
+
+    String haystack = response;
+    haystack.toLowerCase();
+
+    String rules = requiredText;
+    rules.toLowerCase();
+
+    int groupStart = 0;
+
+    while(groupStart < rules.length()) {
+
+        // Split AND groups by ';'
+        int groupEnd = rules.indexOf(';', groupStart);
+
+        if(groupEnd == -1) {
+            groupEnd = rules.length();
+        }
+
+        String group = rules.substring(groupStart, groupEnd);
+        group.trim();
+
+        bool groupMatched = false;
+
+        int tokenStart = 0;
+
+        // Split OR tokens by '|'
+        while(tokenStart < group.length()) {
+
+            int tokenEnd = group.indexOf('|', tokenStart);
+
+            if(tokenEnd == -1) {
+                tokenEnd = group.length();
+            }
+
+            String token = group.substring(tokenStart, tokenEnd);
+            token.trim();
+
+            bool negate = false;
+
+            if(token.startsWith("~")) {
+                negate = true;
+                token.remove(0, 1);
+                token.trim();
+            }
+
+            bool contains = haystack.indexOf(token) != -1;
+
+            if(negate) {
+                contains = !contains;
+            }
+
+            if(contains) {
+                groupMatched = true;
+                break;
+            }
+
+            tokenStart = tokenEnd + 1;
+        }
+
+        // Every AND group must pass
+        if(!groupMatched) {
+            return false;
+        }
+
+        groupStart = groupEnd + 1;
     }
+
+    return true;
+}

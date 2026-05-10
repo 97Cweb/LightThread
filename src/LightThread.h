@@ -26,6 +26,7 @@ enum class State {
     JOINER_FACTORY_RESET,
 
     // Leader path
+    LEADER_INIT,
     LEADER_WAIT_NETWORK,
     COMMISSIONER_START,
     COMMISSIONER_ACTIVE,
@@ -55,6 +56,11 @@ class LightThread {
 
     bool inState(State expected) const; // LightThreadCore.cpp
     String getLeaderIp() const { return leaderIp; }
+
+    struct CliStep {
+        String command;
+        String requiredText;
+    };
 
     // ------------------------
     // exposedUDP.cpp
@@ -94,13 +100,25 @@ class LightThread {
     unsigned long cliCommandTimeout = LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS;
 
 
-    
+    enum class CliResult {
+        Waiting,
+        Done,
+        Failed
+    };
     bool startCliCommand(const String& command, const String& expected, unsigned long timeoutMs = LIGHTTHREAD_CLI_DEFAULT_TIMEOUT_MS);
     void updateCliCommand();
     bool cliCommandDone();
     bool cliCommandFailed();
     String getCliResponse();
     void clearCliResult();
+    CliResult consumeCliResult(String* response = nullptr);
+
+    uint8_t cliStepIndex = 0;
+    unsigned long cliStepLastRun = 0;
+
+    bool runCliSteps(const CliStep* steps, uint8_t count);
+    bool responseContainsAny(const String& response, const char* requiredText) const;
+    void resetCliSteps();
 
 
     // Data loaded from /network.json (DataStorage.cpp)
@@ -136,6 +154,7 @@ class LightThread {
     // ------------------------
     // StateHandlers_Leader.cpp
     // ------------------------
+    void handleLeaderInit();
     void handleLeaderWaitNetwork();
     void handleCommissionerStart();
     void handleCommissionerActive();
