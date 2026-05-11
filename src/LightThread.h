@@ -37,14 +37,14 @@ enum class State {
     ERROR
 };
 
-enum MessageType {  NORMAL =                0x00, 
-                    PAIRING_BROADCAST =     0x01, 
-                    PAIRING_REQUEST =       0x02, 
-                    PAIRING_RESPONSE =      0x03, 
-                    RECONNECT_REQUEST =     0x04, 
-                    RECONNECT_RESPONSE =    0x05, 
-                    HEARTBEAT =             0x06, 
-                    HEARTBEAT_ECHO =        0x07 
+enum MessageType {  NORMAL =                0x00,
+                    PAIRING_BROADCAST =     0x01,
+                    PAIRING_REQUEST =       0x02,
+                    PAIRING_RESPONSE =      0x03,
+                    RECONNECT_REQUEST =     0x04,
+                    RECONNECT_RESPONSE =    0x05,
+                    HEARTBEAT =             0x06,
+                    HEARTBEAT_ECHO =        0x07
                 };
 
 enum LightThreadLogLevel { LIGHTTHREAD_LOG_VERBOSE, LIGHTTHREAD_LOG_INFO, LIGHTTHREAD_LOG_WARN, LIGHTTHREAD_LOG_ERROR };
