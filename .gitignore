@@ -20,3 +20,11 @@ Thumbs.db
 # Ignore VSCode or PlatformIO configs (if used)
 .vscode/
 .pio/
+
+# Ignore cache
+.cache/
+
+# Zed / clangd local files
+.cache/
+compile_commands.json
+.arduino-build/
