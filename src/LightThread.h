@@ -127,6 +127,7 @@ class LightThread {
     int configuredChannel = -1;
     String configuredPrefix = "";
     String configuredPanid = "";
+    String configuredLED = "rgb";
 
     // Heartbeat tracking (Joiner)
     unsigned long lastHeartbeatSent = 0;

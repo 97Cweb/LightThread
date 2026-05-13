@@ -74,6 +74,13 @@ bool LightThread::parseNetworkJson(const String &jsonStr) {
                    roleStr.c_str(), configuredChannel, configuredPrefix.c_str(),
                    configuredPanid.c_str());
 
+    if(!doc["identity"].containsKey("led")){
+        logLightThread(LIGHTTHREAD_LOG_WARN, "Missing LED format, defaulting rgb");
+    }
+    else{
+        configuredLED = (const char *) doc["identity"]["led"];
+    }
+
     return true;
 }
 
@@ -86,11 +93,13 @@ void LightThread::createDefaultNetworkConfig() {
     StaticJsonDocument<LIGHTTHREAD_JSON_CAPACITY> doc;
     JsonObject identity = doc.createNestedObject("identity");
     identity["role"] = "joiner";
+    identity["led"] = LIGHTTHREAD_DEFAULT_LED;
 
     JsonObject network = doc.createNestedObject("network");
     network["channel"] = LIGHTTHREAD_DEFAULT_CHANNEL;
     network["meshlocalprefix"] = LIGHTTHREAD_DEFAULT_MESH_PREFIX;
     network["panid"] = LIGHTTHREAD_DEFAULT_PANID;
+
 
     File file = SD.open("/LightThread/network.json", FILE_WRITE);
     if(!file) {

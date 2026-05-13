@@ -17,7 +17,7 @@ void LightThread::begin() {
 // Main loop update: handles input and state transitions
 void LightThread::update() {
     handleButton(); // Check for button presses
-    
+
     readCliSerial();
     processState(); // Call the handler for current state
     updateCliCommand();
@@ -118,7 +118,7 @@ void LightThread::handleInit() {
                 logLightThread(LIGHTTHREAD_LOG_INFO, "INIT: Joiner has saved leader info: %s",
                                leaderIp.c_str());
                 setState(State::JOINER_RECONNECT);
-            } 
+            }
             else {
                 logLightThread(LIGHTTHREAD_LOG_INFO, "INIT: No saved leader info, standby");
                 setState(State::STANDBY);
@@ -127,7 +127,7 @@ void LightThread::handleInit() {
         }
         else{
             logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER detected. Bootstrapping network setup...");
-            setState(State::LEADER_INIT);        
+            setState(State::LEADER_INIT);
         }
     }
 }
@@ -200,8 +200,20 @@ void LightThread::updateLighting() {
     static unsigned long lastBlink = 0;
     static bool ledOn = false;
 
-    auto set = [](int r, int g, int b) {
-        rgbLedWrite(RGB_BUILTIN, g, r, b); // Assume GRB, TODO: set to RGB when using new boards
+    auto set = [this](int r, int g, int b) {
+        int colors[3] = {r, g, b}; // index 0=r,1=g,2=b
+        int out[3];
+
+        for (int i = 0; i < 3; i++) {
+            switch (tolower(configuredLED[i])) {
+                case 'r': out[i] = colors[0]; break;
+                case 'g': out[i] = colors[1]; break;
+                case 'b': out[i] = colors[2]; break;
+                default:  out[i] = 0;         break; // safety fallback
+            }
+        }
+
+        rgbLedWrite(RGB_BUILTIN, out[0], out[1], out[2]);
     };
 
     auto blink = [&](int r, int g, int b) {
