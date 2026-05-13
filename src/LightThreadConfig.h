@@ -44,6 +44,7 @@ constexpr unsigned long LIGHTTHREAD_HEARTBEAT_TIMEOUT_MS = 3 * LIGHTTHREAD_HEART
 constexpr uint8_t LIGHTTHREAD_DEFAULT_CHANNEL = 11;
 constexpr const char* LIGHTTHREAD_DEFAULT_MESH_PREFIX = "fd00::";
 constexpr const char* LIGHTTHREAD_DEFAULT_PANID = "0x1234";
+constexpr const char* LIGHTTHREAD_DEFAULT_LED = "rgb";
 
 constexpr size_t LIGHTTHREAD_HASH_BYTES = 8;
 constexpr size_t LIGHTTHREAD_MAC_BYTES = 6;
@@ -72,4 +73,3 @@ constexpr const char* LIGHTTHREAD_LINK_LOCAL_PREFIX_START = "fe80";
 
 constexpr const char* LIGHTTHREAD_HASH_FORMAT = "%016llx";
 constexpr const char* LIGHTTHREAD_HEX_CHARS = "0123456789abcdef";
-
