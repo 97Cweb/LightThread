@@ -1,293 +1,206 @@
 #include "LightThread.h"
 
-// Starts the joiner process by configuring dataset and launching join
 void LightThread::handleJoinerStart() {
+  if(!justEntered){
+    return;  
+  }
+  justEntered = false;
+  
+  if(thread.hasActiveDataset()){
+    logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_START - Active dataset already exists");
+    setState(State::JOINER_RECONNECT);
+    return;
+  }    
 
-     const LightThread::CliStep setupCommands[] = {
-            {"dataset clear",                                                               ""},
-            {"dataset init new",                                                            ""},
-            {String("dataset panid ") + configuredPanid,                                    ""},
-            {String("dataset channel ") + configuredChannel,                                ""},
-            {String("dataset meshlocalprefix ") + configuredPrefix,                         ""},
-            {String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,                       ""},
-            {String("dataset networkname ") + LIGHTTHREAD_NETWORK_NAME,                     ""},
-            {String("mode ") + LIGHTTHREAD_THREAD_MODE,                                     ""},
-            {String("routerselectionjitter ") + LIGHTTHREAD_ROUTER_SELECTION_JITTER,        ""},
-            {String("routerupgradethreshold ") + LIGHTTHREAD_ROUTER_UPGRADE_THRESHOLD,      ""},
-            {String("routerdowngradethreshold ") + LIGHTTHREAD_ROUTER_DOWNGRADE_THRESHOLD,  ""},
-            {"dataset commit active",                                                       ""},
-            {"ifconfig up",                                                                 ""},
-            {"udp close",                                                                   ""},
-            {"udp open",                                                                    ""},
-            {String("udp bind :: ") + LIGHTTHREAD_UDP_PORT,                                 ""},
-            {"ipaddr mleid",                                                                ""}
-        };     
+  logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_START - Preparing Thread Joiner");
 
-    const LightThread::CliStep postIPCommands[] = {
-            {String("joiner start ") + LIGHTTHREAD_JOINER_PSKD,         ""},
-            {"thread start",                                            ""},
+  //restrict discovery to configured network, channel and panid are hints
+  thread.setChannel(configuredChannel);
+  thread.setPanId(configuredPanId);
+  thread.setExtendedPanId(LIGHTTHREAD_EXTENDED_PAN_ID);
 
-        };   
+  //IPV6 enabled, thread not started
+  thread.networkInterfaceUp();
 
-    static bool capturedIp = false;
-    if(justEntered) {
-        justEntered = false;
-        resetCliSteps();
-        capturedIp = false;
+  logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_START - Starting commissioning on channel %u", configuredChannel);
 
-        logLightThread(
-            LIGHTTHREAD_LOG_INFO,
-            "JOINER_START: configuring dataset and starting joiner"
-        );
+  otError error = thread.startJoiner(LIGHTTHREAD_JOINER_PSKD, LIGHTTHREAD_JOINER_START_TIMEOUT_MS);
+
+  if(error != OT_ERROR_NONE){
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_START - Commissioning failed: %s (%d)", otThreadErrorToString(error), static_cast<int>(error));
+
+    thread.networkInterfaceDown();
+    setState(State::STANDBY);
+    return;  
+  }
+  logLightThread(LIGHTTHREAD_LOG_INFO,"JOINER_START - Commissioning succeeded - dataset received");
+
+  thread.start();
+  setState(State::JOINER_WAIT_NETWORK);
+}
+
+void LightThread::handleJoinerWaitNetwork() {
+  if(justEntered){
+    justEntered = false;
+
+    logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_WAIT_NETWORK - Waiting for a thread attachment");
+  }
+
+  if(isThreadAttached()){
+    refreshMyIp();
+
+    if(!openUdp()){
+      setState(State::ERROR);
     }
 
-    if(!capturedIp){
-        if(!runCliSteps(setupCommands, 17)) {
-            return;
-        }
-        captureMyIpFromResponse(pendingCliResponse);
-        capturedIp = true;
-        resetCliSteps();
+    logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_WAIT_NETWORK - Attached as %s", thread.otGetStringDeviceRole());
 
-    }
-    
+    setState(State::JOINER_DISCOVER_LEADER);
+    return;
+  }
 
-    if(!runCliSteps(postIPCommands, 2)) {
-        return;
-    }
+  if(timeInState() >= LIGHTTHREAD_ATTACH_TIMEOUT_MS){
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_WAIT_NETWORK - Attachment timed out - role = %s", thread.otGetStringDeviceRole());
+    setState(State::ERROR);
+  }
 
-    
-    setState(State::JOINER_SCAN);
 
 }
 
-// Checks for joiner success/failure and transitions accordingly
-void LightThread::handleJoinerScan() {
-    const LightThread::CliStep joinerScanCommands[] = {
-            {"joiner state", "~Join failed;success|Idle"}
-        };
+void LightThread::handleJoinerDiscoverLeader() {
+  if(justEntered){
+    justEntered = false;
 
-    if(justEntered) {
-        justEntered = false;
-        resetCliSteps();
-    }
+    logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_DISCOVER_LEADER - Waiting for pairing broadcast");
+  }
 
-    if(!runCliSteps(joinerScanCommands, 1)) {
-        return;
-    }
+  //udpcomm.cpp handles the discovery exchange. 
+  //PAIRING_BROADCAST received, send pairing request
+  //PAIRING_RESPONSE received, remember leaderIP, enter JOINER_PAIRED
 
-    setState(State::JOINER_WAIT_BROADCAST);
+  if(!isThreadAttached()){
+    logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_DISCOVER_LEADER - Thread attachment lost");
+
+    closeUdp();
+    setState(State::JOINER_RECONNECT);
+    return;
+  }
+
+  if(timeInState() >= LIGHTTHREAD_JOINER_TIMEOUT_MS){
+    logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_DISCOVER_LEADER - Pairing broadcast timed out");
+
+    closeUdp();
+    setState(State::JOINER_RECONNECT);
+  }
 }
 
-// Waits for leader’s Pairing Broadcast
-void LightThread::handleJoinerWaitBroadcast() {
-    if(justEntered) {
-        justEntered = false;
-        resetCliSteps();
-
-        logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_WAIT_BROADCAST: Listening for leader broadcast...");
-    }
-
-    // Timeout fallback
-    if(millis() - stateEntryTime > LIGHTTHREAD_JOINER_START_TIMEOUT_MS) {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_WAIT_BROADCAST: Timed out waiting for broadcast.");
-        setState(State::STANDBY);
-        return;
-    }
-}
-
-// Waits for leader to acknowledge our response
-void LightThread::handleJoinerWaitAck() {
-    if(justEntered) {
-        justEntered = false;
-        resetCliSteps();
-
-        logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_WAIT_RESPONSE: Waiting for PAIRING_RESPONSE...");
-    }
-
-    if(timeInState() > LIGHTTHREAD_JOINER_SCAN_TIMEOUT_MS) { // 10s timeout
-        logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_WAIT_RESPONSE: Timed out waiting for ACK");
-        setState(State::STANDBY);
-    }
-}
-
-// Fully paired state — fires join callback once, waits for attach to settle,
-// then optionally escalates to rdn mode.
 void LightThread::handleJoinerPaired() {
-    static bool firedJoinCallback = false;
-    static bool verifiedAttached = false;
+  if(justEntered){
+    justEntered = false;
 
+    logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_PAIRED - Leader is %s", leaderIp.toString().c_str());  
+  }
 
-    const LightThread::CliStep pairedCheckCommands[] = {
-            {"state", "child|router"}
+  if(!isThreadAttached()){
+    logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_PAIRED - Thread attachment lost");
 
-        };
+    leaderIp = IPAddress();
+    closeUdp();
 
-
-
-    if(justEntered) {
-        justEntered = false;
-        resetCliSteps();
-
-        firedJoinCallback = false;
-        verifiedAttached = false;
-
-        lastHeartbeatSent = millis();
-        lastHeartbeatEcho = millis();
-
-        logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_PAIRED: Verifying Thread state...");
-    }
-
-    // Phase 1: verify we are attached
-    if(!verifiedAttached) {
-        if(!runCliSteps(pairedCheckCommands, 1)) {
-            return;
-        }
-
-        verifiedAttached = true;
-        resetCliSteps();
-    }
-
-    if(!firedJoinCallback) {
-        firedJoinCallback = true;
-        resetCliSteps();
-
-        if(joinCallback) {
-            String hashStr = hashToString(generateMacHash());
-
-            joinCallback(leaderIp, hashStr);
-
-            logLightThread(LIGHTTHREAD_LOG_INFO,
-                           "JOINER_PAIRED: Fired joinCallback with IP %s and hash %s",
-                           leaderIp.c_str(),
-                           hashStr.c_str());
-            lastHeartbeatSent = millis();
-            lastHeartbeatEcho = millis();
-        }
-    }    
-
-    sendHeartbeatIfDue();
+    setState(State::JOINER_RECONNECT);
+    return;
+  }
 }
 
 void LightThread::handleJoinerReconnect() {
+  static unsigned long lastDiscoveryRequest = 0;
+  
+  if(justEntered){
+    justEntered = false;
 
-    const LightThread::CliStep reconnectCommands[] = {
-                {"thread stop",                                                                 ""},
-                {"ifconfig down",                                                               ""},
-                {"udp close",                                                                   ""},
-                {String("dataset panid ") + configuredPanid,                                    ""},
-                {String("dataset channel ") + configuredChannel,                                ""},
-                {String("dataset meshlocalprefix ") + configuredPrefix,                         ""},
-                {String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,                       ""},
-                {String("dataset networkname ") + LIGHTTHREAD_NETWORK_NAME,                     ""},
-                {String("mode ") + LIGHTTHREAD_THREAD_MODE,                                     ""},
-                {String("routerselectionjitter ") + LIGHTTHREAD_ROUTER_SELECTION_JITTER,        ""},
-                {String("routerupgradethreshold ") + LIGHTTHREAD_ROUTER_UPGRADE_THRESHOLD,      ""},
-                {String("routerdowngradethreshold ") + LIGHTTHREAD_ROUTER_DOWNGRADE_THRESHOLD,  ""},
-                {"dataset commit active",                                                       ""},
-                {"ifconfig up",                                                                 ""},
-                {"udp open",                                                                    ""},
-                {String("udp bind :: ") + LIGHTTHREAD_UDP_PORT,                                 ""},
-                {"ipaddr mleid",                                                                ""}
-            };
+    leaderIp = IPAddress();
+    lastDiscoveryRequest = 0;
 
-     const LightThread::CliStep postIPCommands[] = {
-            {"thread start",    ""},
-            {"state",           "child|router"}
-        };   
-    static bool capturedIp = false;
-    if(justEntered) {
-        justEntered = false;
-        resetCliSteps();
-        capturedIp = false;
+    logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_RECONNECT - Resuming stored Thread network");
 
-        logLightThread(
-            LIGHTTHREAD_LOG_INFO,
-            "JOINER_START: configuring dataset and reconnecting joiner"
-        );
+    closeUdp();
+    
+    if(!thread.hasActiveDataset()){
+      logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_RECONNECT - No stored thread dataset");
+
+      setState(State::STANDBY);
+      return;
     }
-    if(!capturedIp){
-        if(!runCliSteps(reconnectCommands, 17)) {
+
+    thread.networkInterfaceUp();
+    thread.start();
+  }
+
+  if(!isThreadAttached()){
+    if(timeInState() >= LIGHTTHREAD_ATTACH_TIMEOUT_MS){
+      logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_RECONNECT - Still waiting for thread attachment - role = %s",thread.otGetStringDeviceRole());
+      stateEntryTime = millis();
+      
+    }
+    return;
+  }
+
+  if(!udpOpen){
+    refreshMyIp();
+
+    if(!openUdp()){
+      setState(State::ERROR);
+      return;
+    }
+  }
+  
+  //get leader address
+
+  if(lastDiscoveryRequest == 0 ||
+       millis() - lastDiscoveryRequest >=
+           LIGHTTHREAD_LEADER_BROADCAST_INTERVAL_MS) {
+
+        IPAddress multicastAddress;
+
+        if(!multicastAddress.fromString("ff03::1")) {
+            logLightThread(
+                LIGHTTHREAD_LOG_ERROR,
+                "JOINER_RECONNECT - Invalid multicast address"
+            );
+
+            setState(State::ERROR);
             return;
         }
-        
-        captureMyIpFromResponse(pendingCliResponse);
-        capturedIp = true;
-        resetCliSteps();
+
+        std::vector<uint8_t> identity =
+            hashToBytes(generateMacHash());
+
+        if(sendUdpPacket(
+            MessageType::DISCOVERY_REQUEST,
+            identity,
+            multicastAddress,
+            LIGHTTHREAD_UDP_PORT
+        )) {
+            logLightThread(
+                LIGHTTHREAD_LOG_INFO,
+                "JOINER_RECONNECT - Leader discovery request sent"
+            );
+        }
+
+        lastDiscoveryRequest = millis();
     }
 
-    if(!runCliSteps(postIPCommands, 2)) {
-        return;
+    if(timeInState() >= LIGHTTHREAD_JOINER_TIMEOUT_MS) {
+        logLightThread(
+            LIGHTTHREAD_LOG_ERROR,
+            "JOINER_RECONNECT - Leader discovery timed out"
+        );
+
+        setState(State::ERROR);
     }
 
-    
-    setState(State::JOINER_PAIRED);
-}
-
-// Called when actively retrying multicast reconnect
-void LightThread::handleJoinerSeekingLeader() { sendHeartbeatIfDue(); }
-
-// Heartbeat logic for JOINER: sends echo, triggers reconnect on timeout
-void LightThread::sendHeartbeatIfDue() {
-    if(leaderIp.isEmpty())
-        return;
-
-    // Send every 5 seconds
-    if(millis() - lastHeartbeatSent < LIGHTTHREAD_HEARTBEAT_INTERVAL_MS)
-        return;
-
-    // No echo in 15s → assume leader is dead and trigger reconnect
-    if(millis() - lastHeartbeatEcho > LIGHTTHREAD_HEARTBEAT_TIMEOUT_MS) {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "HEARTBEAT: Leader not responding. Broadcasting reconnect.");
-
-        // Send RECONNECT request over multicast with own hashMAC
-        std::vector<uint8_t> payload = hashToBytes(generateMacHash());
-
-        sendUdpPacket(MessageType::RECONNECT_REQUEST, payload, LIGHTTHREAD_MULTICAST_ALL_NODES, LIGHTTHREAD_UDP_PORT);
-        lastHeartbeatSent = millis(); // Rate-limit retries
-        setState(State::JOINER_SEEKING_LEADER);
-        return;
-    }
-
-    lastHeartbeatSent = millis();
-
-    // Normal heartbeat to known leader IP
-    std::vector<uint8_t> payload = hashToBytes(generateMacHash());
-
-    bool ok = sendUdpPacket(MessageType::HEARTBEAT, payload, leaderIp, LIGHTTHREAD_UDP_PORT);
-    if(ok) {
-        logLightThread(LIGHTTHREAD_LOG_INFO, "HEARTBEAT: Sent to leader");
-    } else {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "HEARTBEAT: Failed to send");
-    }
 }
 
 void LightThread::handleJoinerFactoryReset() {
-    const LightThread::CliStep joinerClearCommands[] = {
-            {"thread stop",     ""},
-            {"ifconfig down",   ""},
-            {"udp close",       ""},
-            {"dataset clear",   ""},
-        };    
-
-    if(justEntered) {
-        justEntered = false;
-        resetCliSteps();
-
-        
-        clearPersistentState();
-
-        leaderIp = "";
-        myIp = "";
-        lastHeartbeatSent = 0;
-        lastHeartbeatEcho = 0;
-
-        logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_FACTORY_RESET: clearing Thread state");
-    }
-
-    if(!runCliSteps(joinerClearCommands, 4)) {
-        return;
-    }
-    
-    setState(State::STANDBY);
+    setState(State::ERROR);
 }

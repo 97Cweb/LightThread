@@ -1,174 +1,190 @@
 #include "LightThread.h"
+
 #include <ArduinoJson.h>
 #include <FS.h>
 #include <SD.h>
 
-// Loads and parses the network configuration from SD card.
-// If the file is missing, creates a default config.
-// Returns true if config was loaded successfully.
 bool LightThread::loadNetworkConfig() {
     if(!SD.begin()) {
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "SD card mount failed");
+        logLightThread(
+            LIGHTTHREAD_LOG_ERROR,
+            "SD card mount failed"
+        );
+
         return false;
     }
 
-    File configFile = SD.open("/LightThread/network.json");
+    File configFile =
+        SD.open("/LightThread/network.json");
+
     if(!configFile) {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "/LightThread/network.json not found. Creating default.");
+        logLightThread(
+            LIGHTTHREAD_LOG_WARN,
+            "network.json missing; creating default"
+        );
+
         createDefaultNetworkConfig();
         return false;
     }
 
-    // Read the file into a string
-    String jsonStr;
+    String json;
+
     while(configFile.available()) {
-        jsonStr += (char)configFile.read();
+        json += static_cast<char>(
+            configFile.read()
+        );
     }
+
     configFile.close();
 
-    return parseNetworkJson(jsonStr);
+    return parseNetworkJson(json);
 }
 
-// Parses the contents of network.json and extracts configuration fields.
-// Sets internal role and network parameters. Returns false on error.
-bool LightThread::parseNetworkJson(const String &jsonStr) {
-    StaticJsonDocument<LIGHTTHREAD_JSON_CAPACITY> doc;
-    DeserializationError err = deserializeJson(doc, jsonStr);
-    if(err) {
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "JSON parse error: %s", err.c_str());
+bool LightThread::parseNetworkJson(
+    const String &jsonStr
+) {
+    StaticJsonDocument<
+        LIGHTTHREAD_JSON_CAPACITY
+    > doc;
+
+    DeserializationError error =
+        deserializeJson(doc, jsonStr);
+
+    if(error) {
+        logLightThread(
+            LIGHTTHREAD_LOG_ERROR,
+            "JSON parse error: %s",
+            error.c_str()
+        );
+
         return false;
     }
 
-    // Parse identity → role
-    if(!doc.containsKey("identity") || !doc["identity"].containsKey("role")) {
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "Missing 'identity.role' in network.json");
+    const char *roleText =
+        doc["identity"]["role"];
+
+    if(roleText == nullptr) {
+        logLightThread(
+            LIGHTTHREAD_LOG_ERROR,
+            "Missing identity.role"
+        );
+
         return false;
     }
 
-    String roleStr = (const char *)doc["identity"]["role"];
-    roleStr.toLowerCase();
+    String roleString(roleText);
+    roleString.toLowerCase();
 
-    // Map string to enum Role
-    if(roleStr == "leader") {
+    if(roleString == "leader") {
         role = Role::LEADER;
-    } else if(roleStr == "joiner") {
+    } else if(roleString == "joiner") {
         role = Role::JOINER;
     } else {
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "Invalid role '%s' in network.json", roleStr.c_str());
+        logLightThread(
+            LIGHTTHREAD_LOG_ERROR,
+            "Invalid role: %s",
+            roleString.c_str()
+        );
+
         return false;
     }
 
-    // Parse network details
     JsonObject network = doc["network"];
-    if(!network.containsKey("channel") || !network.containsKey("meshlocalprefix") ||
-       !network.containsKey("panid")) {
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "Missing required network keys");
-        return false;
+
+    configuredChannel =
+        network["channel"] |
+        LIGHTTHREAD_DEFAULT_CHANNEL;
+
+    JsonVariant panId =
+        network["panid"];
+
+    if(panId.is<uint16_t>()) {
+        configuredPanId =
+            panId.as<uint16_t>();
+    } else if(panId.is<const char *>()) {
+        configuredPanId =
+            static_cast<uint16_t>(
+                strtoul(
+                    panId.as<const char *>(),
+                    nullptr,
+                    0
+                )
+            );
+    } else {
+        configuredPanId =
+            LIGHTTHREAD_DEFAULT_PANID;
     }
 
-    configuredChannel = network["channel"];
-    configuredPrefix = (const char *)network["meshlocalprefix"];
-    configuredPanid = (const char *)network["panid"];
+    configuredPrefix =
+        network["meshlocalprefix"] |
+        LIGHTTHREAD_DEFAULT_MESH_PREFIX;
 
-    logLightThread(LIGHTTHREAD_LOG_INFO, "Config loaded: role=%s, channel=%d, prefix=%s, panid=%s",
-                   roleStr.c_str(), configuredChannel, configuredPrefix.c_str(),
-                   configuredPanid.c_str());
+    configuredLED =
+        doc["identity"]["led"] |
+        LIGHTTHREAD_DEFAULT_LED;
 
-    if(!doc["identity"].containsKey("led")){
-        logLightThread(LIGHTTHREAD_LOG_WARN, "Missing LED format, defaulting rgb");
-    }
-    else{
-        configuredLED = (const char *) doc["identity"]["led"];
-    }
+    logLightThread(
+        LIGHTTHREAD_LOG_INFO,
+        "Config role=%s channel=%u panid=0x%04x",
+        roleString.c_str(),
+        configuredChannel,
+        configuredPanId
+    );
 
     return true;
 }
 
-// Creates a default /LightThread/network.json with joiner role and safe defaults.
 void LightThread::createDefaultNetworkConfig() {
     if(!SD.exists("/LightThread")) {
         SD.mkdir("/LightThread");
     }
 
-    StaticJsonDocument<LIGHTTHREAD_JSON_CAPACITY> doc;
-    JsonObject identity = doc.createNestedObject("identity");
+    StaticJsonDocument<
+        LIGHTTHREAD_JSON_CAPACITY
+    > doc;
+
+    JsonObject identity =
+        doc.createNestedObject("identity");
+
     identity["role"] = "joiner";
-    identity["led"] = LIGHTTHREAD_DEFAULT_LED;
+    identity["led"] =
+        LIGHTTHREAD_DEFAULT_LED;
 
-    JsonObject network = doc.createNestedObject("network");
-    network["channel"] = LIGHTTHREAD_DEFAULT_CHANNEL;
-    network["meshlocalprefix"] = LIGHTTHREAD_DEFAULT_MESH_PREFIX;
-    network["panid"] = LIGHTTHREAD_DEFAULT_PANID;
+    JsonObject network =
+        doc.createNestedObject("network");
 
+    network["channel"] =
+        LIGHTTHREAD_DEFAULT_CHANNEL;
 
-    File file = SD.open("/LightThread/network.json", FILE_WRITE);
+    network["meshlocalprefix"] =
+        LIGHTTHREAD_DEFAULT_MESH_PREFIX;
+
+    network["panid"] =
+        LIGHTTHREAD_DEFAULT_PANID;
+
+    SD.remove("/LightThread/network.json");
+
+    File file = SD.open(
+        "/LightThread/network.json",
+        FILE_WRITE
+    );
+
     if(!file) {
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "Failed to create default /LightThread/network.json");
+        logLightThread(
+            LIGHTTHREAD_LOG_ERROR,
+            "Could not create network.json"
+        );
+
         return;
     }
 
     serializeJsonPretty(doc, file);
     file.close();
-
-    logLightThread(LIGHTTHREAD_LOG_WARN, "Default /network.json created");
 }
 
-// Writes the current leader IP and hashmac to leader.json.
-// Used by joiners to store their commissioner.
-bool LightThread::saveLeaderInfo(const String &ip, const String &hashmac) {
-    if(!SD.begin())
-        return false;
-
-    if(!SD.exists("/LightThread")) {
-        SD.mkdir("/LightThread");
-    }
-
-    StaticJsonDocument<LIGHTTHREAD_JSON_CAPACITY> doc;
-    doc["leader_ip"] = ip;
-    doc["leader_hash"] = hashmac;
-
-    File file = SD.open("/LightThread/leader.json", FILE_WRITE);
-    if(!file) {
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "Failed to write leader.json");
-        return false;
-    }
-
-    serializeJsonPretty(doc, file);
-    file.close();
-    return true;
-}
-
-// Reads stored leader info back into out parameters.
-// Returns false if not found or parse error.
-bool LightThread::loadLeaderInfo(String &outIp, String &outHashmac) {
-    File file = SD.open("/LightThread/leader.json");
-    if(!file)
-        return false;
-
-    StaticJsonDocument<LIGHTTHREAD_JSON_CAPACITY> doc;
-    DeserializationError err = deserializeJson(doc, file);
-    file.close();
-
-    if(err)
-        return false;
-
-    if(!doc.containsKey("leader_ip") || !doc.containsKey("leader_hash")) {
-        return false;
-    }
-
-    outIp = (const char *)doc["leader_ip"];
-    outHashmac = (const char *)doc["leader_hash"];
-
-    return !outIp.isEmpty() && !outHashmac.isEmpty();
-}
-
-// Removes all persistent config and joiner/leader tracking files.
-// Useful for full reset via long-press or factory wipe.
 void LightThread::clearPersistentState() {
-    logLightThread(LIGHTTHREAD_LOG_WARN, "WIPING all stored configuration");
-
-    SD.remove("/LightThread/network.json");
-    SD.remove("/LightThread/leader.json");
-
-    createDefaultNetworkConfig(); // recreate fresh network.json
+    // For the moment, only application-side state.
+    // Native Thread dataset erasure is added later.
+    leaderIp = IPAddress();
+    myIp = IPAddress();
 }

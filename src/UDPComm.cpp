@@ -1,242 +1,333 @@
 #include "LightThread.h"
 #include "esp_mac.h"
 
-// Parses a line from the CLI to see if it's a UDP message and attempts to parse it.
-void LightThread::handleUdpLine(const String &line, const String &srcIp) {
-    logLightThread(LIGHTTHREAD_LOG_INFO, "UDP Received: %s", line.c_str());
-
-    if(srcIp.isEmpty()) {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "UDP message missing source IP.");
+void LightThread::receiveUdpPackets() {
+    if(!udpOpen) {
         return;
     }
 
-    int hexStart = line.lastIndexOf(' ');
-    if(hexStart == -1 || hexStart + 1 >= line.length()) {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "UDP message missing payload: %s", line.c_str());
-        return;
-    }
+    int packetSize = 0;
 
-    String hexPayload = line.substring(hexStart + 1);
-    hexPayload.trim();
+    while((packetSize = udp.parsePacket()) > 0) {
+        if(packetSize < static_cast<int>(
+            LIGHTTHREAD_UDP_HEADER_BYTES
+        )) {
+            logLightThread(
+                LIGHTTHREAD_LOG_WARN,
+                "Received undersized UDP packet"
+            );
 
-    MessageType msg;
-    std::vector<uint8_t> payload;
+            while(udp.available()) {
+                udp.read();
+            }
 
-    if(!parseIncomingPayload(hexPayload, msg, payload)) {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "Failed to parse UDP payload: %s", hexPayload.c_str());
-        return;
-    }
-
-    logLightThread(LIGHTTHREAD_LOG_INFO, "Parsed UDP msg %02x, payload %d bytes",
-                   static_cast<int>(msg), static_cast<int>(payload.size()));
-
-    if(msg == MessageType::PAIRING_BROADCAST &&
-       inState(State::JOINER_WAIT_BROADCAST)) {
-        logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_WAIT_BROADCAST: Got PAIRING broadcast from %s",
-                       srcIp.c_str());
-
-        // Respond with ID to leader directly
-        std::vector<uint8_t> idBytes = hashToBytes(generateMacHash());
-
-        sendUdpPacket(MessageType::PAIRING_REQUEST, idBytes, srcIp, LIGHTTHREAD_UDP_PORT);
-        setState(State::JOINER_WAIT_RESPONSE);
-    }
-
-    else if(msg == MessageType::PAIRING_RESPONSE &&
-            inState(State::JOINER_WAIT_RESPONSE)) {
-        logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_WAIT_RESPONSE: Got PAIRING RESPONSE from %s", srcIp.c_str());
-
-        if(payload.size() != LIGHTTHREAD_HASH_BYTES) {
-            logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_WAIT_RESPONSE: Expected 8-byte hashmac in response");
-            setState(State::ERROR);
-            return;
+            continue;
         }
 
-        leaderIp = srcIp;
+        IPAddress srcIp = udp.remoteIP();
 
-        uint64_t leaderHash = bytesToHash(payload);
-        String hashStr = hashToString(leaderHash);
-        saveLeaderInfo(leaderIp, hashStr);
+        int typeByte = udp.read();
 
-        setState(State::JOINER_PAIRED);
-    }
-
-    else if(msg == MessageType::PAIRING_REQUEST &&
-            inState(State::COMMISSIONER_ACTIVE)) {
-        uint64_t id = bytesToHash(payload);
-        String hashStr = hashToString(id);
-
-        logLightThread(
-            LIGHTTHREAD_LOG_INFO,
-            "COMMISSIONER_ACTIVE: Got joiner ID %s from %s — sending direct RESPONSE", hashStr.c_str(),
-            srcIp.c_str());
-
-        std::vector<uint8_t> hashBytes = hashToBytes(generateMacHash());
-        sendUdpPacket(MessageType::PAIRING_RESPONSE, hashBytes, srcIp, LIGHTTHREAD_UDP_PORT);
-
-        logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_ACTIVE: Pairing complete, exiting commissioning");
-        setState(State::COMMISSIONER_STOPPING);
-    }
-
-    else if(msg == MessageType::RECONNECT_REQUEST && role == Role::LEADER &&
-            inState(State::STANDBY)) {
-        if(payload.size() != 8) {
-            logLightThread(LIGHTTHREAD_LOG_WARN, "RECONNECT: Invalid payload from %s", srcIp.c_str());
-            return;
+        if(typeByte < 0) {
+            continue;
         }
 
-        uint64_t joinerId = bytesToHash(payload);
-        String hashStr = hashToString(joinerId);
+        MessageType type =
+            static_cast<MessageType>(
+                static_cast<uint8_t>(typeByte)
+            );
 
-        logLightThread(LIGHTTHREAD_LOG_INFO, "RECONNECT: Joiner %s [%s] is trying to find the leader",
-                       srcIp.c_str(), hashStr.c_str());
+        std::vector<uint8_t> payload;
+        payload.reserve(packetSize - 1);
 
-        std::vector<uint8_t> hashBytes = hashToBytes(generateMacHash());
+        while(udp.available()) {
+            int value = udp.read();
 
-        sendUdpPacket(MessageType::RECONNECT_RESPONSE, hashBytes, srcIp, LIGHTTHREAD_UDP_PORT);
-    }
+            if(value < 0) {
+                break;
+            }
 
-    else if(msg == MessageType::RECONNECT_RESPONSE && role == Role::JOINER) {
-        if(payload.size() != 8) {
-            logLightThread(LIGHTTHREAD_LOG_WARN, "RECONNECT: Invalid leader hash from %s", srcIp.c_str());
-            return;
+            payload.push_back(
+                static_cast<uint8_t>(value)
+            );
         }
 
-        uint64_t receivedLeaderHash = bytesToHash(payload);
-        String receivedStr = hashToString(receivedLeaderHash);
-
-        leaderIp = srcIp;
-        lastHeartbeatEcho = millis();
-
-        logLightThread(LIGHTTHREAD_LOG_INFO, "RECONNECT: Leader responded from new IP %s [%s]",
-                       srcIp.c_str(), receivedStr.c_str());
-
-        // Save new leader IP to disk
-        saveLeaderInfo(leaderIp, receivedStr);
-        if(joinCallback) {
-            joinCallback(leaderIp, receivedStr);
-            logLightThread(LIGHTTHREAD_LOG_INFO, "RECONNECT: Fired joinCallback with IP %s and hash %s",
-                           leaderIp.c_str(), receivedStr.c_str());
-        }
-
-        setState(State::JOINER_PAIRED);
-    }
-
-    else if(msg == MessageType::HEARTBEAT && role == Role::LEADER) {
-        if(payload.size() != 8) {
-            logLightThread(LIGHTTHREAD_LOG_WARN, "HEARTBEAT: Invalid payload from %s", srcIp.c_str());
-            return;
-        }
-
-        uint64_t id = bytesToHash(payload);
-        String hashStr = hashToString(id);
-
-        unsigned long now = millis();
-        unsigned long lastSeen;
-        if(joinerHeartbeatMap.count(srcIp)) {
-            lastSeen = joinerHeartbeatMap[srcIp];
-        } else {
-            lastSeen = 0;
-        }
-        joinerHeartbeatMap[srcIp] = now;
-
-        logLightThread(LIGHTTHREAD_LOG_INFO, "HEARTBEAT: Joiner %s [%s] is alive", srcIp.c_str(),
-                       hashStr.c_str());
-
-        // Echo heartbeat back
-        sendUdpPacket(MessageType::HEARTBEAT_ECHO, payload, srcIp, LIGHTTHREAD_UDP_PORT);
-
-        // Trigger joinCallback if this is a reappearance
-        if(lastSeen == 0 || now - lastSeen > LIGHTTHREAD_HEARTBEAT_REAPPEAR_MS) {
-            if(joinCallback)
-                joinCallback(srcIp, hashStr);
-            logLightThread(LIGHTTHREAD_LOG_INFO, "HEARTBEAT: Joiner %s [%s] reappeared — callback fired",
-                           srcIp.c_str(), hashStr.c_str());
-        }
-    }
-
-    else if(msg == MessageType::HEARTBEAT_ECHO && role == Role::JOINER) {
-        lastHeartbeatEcho = millis(); // mark as acknowledged
-        logLightThread(LIGHTTHREAD_LOG_INFO, "HEARTBEAT: Echo received from leader");
-    }
-
-    else if(msg == MessageType::NORMAL) {
-        handleNormalUdpMessage(srcIp, payload);
+        handleUdpPacket(srcIp, type, payload);
     }
 }
 
+bool LightThread::sendUdpPacket(
+    MessageType type,
+    const std::vector<uint8_t> &payload,
+    const IPAddress &destIp,
+    uint16_t destPort
+) {
+    return sendUdpPacket(
+        type,
+        payload.data(),
+        payload.size(),
+        destIp,
+        destPort
+    );
+}
 
+bool LightThread::sendUdpPacket(
+    MessageType type,
+    const uint8_t *payload,
+    size_t length,
+    const IPAddress &destIp,
+    uint16_t destPort
+) {
+  if(!udpOpen) {
+      logLightThread(
+          LIGHTTHREAD_LOG_WARN,
+          "UDP socket is not open"
+      );
 
-bool LightThread::parseIncomingPayload(const String &hex, MessageType &type,
-                                       std::vector<uint8_t> &payloadOut) {
-    std::vector<uint8_t> bytes;
-    if(!convertHexToBytes(hex, bytes) || bytes.size() < LIGHTTHREAD_UDP_HEADER_BYTES) {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "Invalid or too short UDP payload: %s", hex.c_str());
+      return false;
+  }
+
+  if(destPort == 0) {
+    logLightThread(
+        LIGHTTHREAD_LOG_WARN,
+        "Invalid UDP destination port"
+    );
+
+    return false;
+  }
+
+  if(!udp.beginPacket(destIp, destPort)) {
+    logLightThread(
+      LIGHTTHREAD_LOG_WARN,"UDP beginPacket failed for %s",destIp.toString().c_str());
+
+      return false;
+  }
+
+    uint8_t typeByte = static_cast<uint8_t>(type);
+
+    if(udp.write(&typeByte, 1) != 1) {
+        logLightThread(
+            LIGHTTHREAD_LOG_WARN,
+            "Failed to write UDP message type"
+        );
+
+        udp.endPacket();
         return false;
     }
 
-    type = static_cast<MessageType>(bytes[0]);
+    if(payload != nullptr && length > 0) {
+        size_t written = udp.write(payload, length);
 
-    payloadOut.assign(bytes.begin() + LIGHTTHREAD_UDP_HEADER_BYTES, bytes.end()); // rest is data
+        if(written != length) {
+            logLightThread(
+                LIGHTTHREAD_LOG_WARN,
+                "UDP payload truncated: %u/%u",
+                static_cast<unsigned>(written),
+                static_cast<unsigned>(length)
+            );
+
+            udp.endPacket();
+            return false;
+        }
+    }
+
+    if(!udp.endPacket()) {
+        logLightThread(
+            LIGHTTHREAD_LOG_WARN,
+            "UDP endPacket failed"
+        );
+
+        return false;
+    }
+
     return true;
+}
+
+void LightThread::handleUdpPacket(
+    const IPAddress &srcIp,
+    MessageType msg,
+    const std::vector<uint8_t> &payload
+) {
+    String srcIpString = srcIp.toString();
+
+    logLightThread(
+        LIGHTTHREAD_LOG_INFO,
+        "UDP type=%02x from %s, payload=%u",
+        static_cast<unsigned>(msg),
+        srcIpString.c_str(),
+        static_cast<unsigned>(payload.size())
+    );
+
+    if(msg == MessageType::PAIRING_BROADCAST &&
+       inState(State::JOINER_DISCOVER_LEADER)) {
+
+        std::vector<uint8_t> idBytes =
+            hashToBytes(generateMacHash());
+
+        sendUdpPacket(
+            MessageType::PAIRING_REQUEST,
+            idBytes,
+            srcIp,
+            LIGHTTHREAD_UDP_PORT
+        );
+
+        return;
+    }
+
+    if(msg == MessageType::PAIRING_RESPONSE &&
+       inState(State::JOINER_DISCOVER_LEADER)) {
+
+        if(payload.size() != LIGHTTHREAD_HASH_BYTES) {
+            logLightThread(
+                LIGHTTHREAD_LOG_ERROR,
+                "PAIRING_RESPONSE has invalid identity length"
+            );
+
+            return;
+        }
+
+        leaderIp = srcIp;
+
+        if(joinCallback) {
+            joinCallback(
+                srcIpString,
+                hashToString(bytesToHash(payload))
+            );
+        }
+
+        setState(State::JOINER_PAIRED);
+        return;
+    }
+
+    if(msg == MessageType::PAIRING_REQUEST &&
+       inState(State::COMMISSIONER_ACTIVE)) {
+
+        if(payload.size() != LIGHTTHREAD_HASH_BYTES) {
+            logLightThread(
+                LIGHTTHREAD_LOG_WARN,
+                "PAIRING_REQUEST has invalid identity length"
+            );
+            return;
+        }
+
+        String joinerHash =
+            hashToString(bytesToHash(payload));
+
+        logLightThread(
+            LIGHTTHREAD_LOG_INFO,
+            "Joiner %s registered from %s",
+            joinerHash.c_str(),
+            srcIpString.c_str()
+        );
+
+        std::vector<uint8_t> leaderIdentity =
+            hashToBytes(generateMacHash());
+
+        if(!sendUdpPacket(
+            MessageType::PAIRING_RESPONSE,
+            leaderIdentity,
+            srcIp,
+            LIGHTTHREAD_UDP_PORT
+        )){
+          logLightThread(LIGHTTHREAD_LOG_WARN,"Could not send PAIRING_RESPONSE to %s", srcIpString.c_str());
+          return;
+        }
+
+        if(joinCallback) {
+            joinCallback(srcIpString, joinerHash);
+        }
+
+        setState(State::COMMISSIONER_STOPPING);
+        return;
+    }
+
+    if(msg == MessageType::DISCOVERY_REQUEST &&
+       role == Role::LEADER) {
+
+        if(payload.size() != LIGHTTHREAD_HASH_BYTES) {
+            logLightThread(
+                LIGHTTHREAD_LOG_WARN,
+                "DISCOVERY_REQUEST has invalid identity length"
+            );
+
+            return;
+        }
+
+        std::vector<uint8_t> leaderIdentity =
+            hashToBytes(generateMacHash());
+
+        sendUdpPacket(
+            MessageType::DISCOVERY_RESPONSE,
+            leaderIdentity,
+            srcIp,
+            LIGHTTHREAD_UDP_PORT
+        );
+
+        return;
+    }
+
+    if(msg == MessageType::DISCOVERY_RESPONSE &&
+       role == Role::JOINER &&
+       inState(State::JOINER_RECONNECT)) {
+
+        if(payload.size() != LIGHTTHREAD_HASH_BYTES) {
+            logLightThread(
+                LIGHTTHREAD_LOG_WARN,
+                "DISCOVERY_RESPONSE has invalid identity length"
+            );
+
+            return;
+        }
+
+        leaderIp = srcIp;
+
+        logLightThread(
+            LIGHTTHREAD_LOG_INFO,
+            "Leader rediscovered at %s",
+            srcIpString.c_str()
+        );
+
+        if(joinCallback) {
+            joinCallback(
+                srcIpString,
+                hashToString(bytesToHash(payload))
+            );
+        }
+
+        setState(State::JOINER_PAIRED);
+        return;
+    }
+
+    if(msg == MessageType::NORMAL) {
+        handleNormalUdpMessage(
+            srcIpString,
+            payload
+        );
+        return;
+    }
+
+    logLightThread(
+        LIGHTTHREAD_LOG_WARN,
+        "Unhandled UDP message type: %02x",
+        static_cast<unsigned>(msg)
+    );
 }
 
 uint64_t LightThread::generateMacHash() {
     uint8_t mac[LIGHTTHREAD_MAC_BYTES];
-    esp_efuse_mac_get_default(mac); // Returns factory MAC
 
-    uint64_t hash = LIGHTTHREAD_FNV1A_OFFSET_BASIS;
-    for(int i = 0; i < LIGHTTHREAD_MAC_BYTES; ++i) {
+    esp_efuse_mac_get_default(mac);
+
+    uint64_t hash =
+        LIGHTTHREAD_FNV1A_OFFSET_BASIS;
+
+    for(size_t i = 0;
+        i < LIGHTTHREAD_MAC_BYTES;
+        ++i) {
+
         hash ^= mac[i];
         hash *= LIGHTTHREAD_FNV1A_PRIME;
     }
+
     return hash;
 }
-
-// Overload of sending a UDP UDP packet for a vector.
-bool LightThread::sendUdpPacket(MessageType type, const std::vector<uint8_t> &payload,
-                                const String &destIp, uint16_t destPort) {
-    return sendUdpPacket(type, payload.data(), payload.size(), destIp, destPort);
-}
-
-// Sends a UDP packet with the given header and payload.
-bool LightThread::sendUdpPacket(MessageType type, const uint8_t *payload,
-                                size_t length, const String &destIp, uint16_t destPort) {
-    if(destIp.isEmpty() || destPort == 0) {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "Invalid UDP destination");
-        return false;
-    }
-
-    std::vector<uint8_t> fullMsg;
-    fullMsg.push_back(static_cast<uint8_t>(type));
-
-
-    fullMsg.insert(fullMsg.end(), payload, payload + length);
-
-    String hex = convertBytesToHex(fullMsg.data(), fullMsg.size());
-
-    String cmd = "udp send " + destIp + " " + String(destPort) + " " + hex;
-    logLightThread(LIGHTTHREAD_LOG_INFO, "sendUdpPacket: %s", cmd.c_str());
-
-    OThreadCLI.println(cmd);
-    return true;
-}
-
-void LightThread::captureMyIpFromResponse(const String &response) {
-    int start = response.indexOf(LIGHTTHREAD_MESH_LOCAL_PREFIX_START);
-    if(start == -1) start = response.indexOf(LIGHTTHREAD_LINK_LOCAL_PREFIX_START);
-
-    if(start == -1) {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "Could not parse MLEID from response: %s", response.c_str());
-        return;
-    }
-
-    int end = response.indexOf('\n', start);
-    if(end == -1) end = response.length();
-
-    myIp = response.substring(start, end);
-    myIp.trim();
-
-    logLightThread(LIGHTTHREAD_LOG_INFO, "Captured my IP: %s", myIp.c_str());
-}
-
