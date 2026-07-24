@@ -1,129 +1,176 @@
 #include "LightThread.h"
 
+void LightThread::handleLeaderInit() {
+  if(!justEntered){
+    return;
+  }
+  justEntered = false;
 
-void LightThread::handleLeaderInit(){
+  //if active dataset exists, reuse to allow reconnect easily
 
-    const LightThread::CliStep leaderSetupCommands[] = {
-            {"dataset init new",                                        ""},
-            {String("dataset channel ") + configuredChannel,            ""},
-            {String("dataset panid ") + configuredPanid,                ""},
-            {String("dataset networkkey ") + LIGHTTHREAD_NETWORK_KEY,   ""},
-            {String("dataset meshlocalprefix ") + configuredPrefix,     ""},
-            {"dataset commit active",                                   ""},
-            {"ifconfig up",                                             ""},
-            {"thread start",                                            ""},
-        };
-    if(justEntered){
-        justEntered = false;
-        resetCliSteps();
-    }
+  if(thread.hasActiveDataset()){
+    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: Active dataset found - resuming existing network");
+  }
+  else{
+    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: No active dataset - creating network");
 
-    if(!runCliSteps(leaderSetupCommands,8)){
-        return;
-    }
+    dataset.initNew();
+    dataset.setNetworkName(LIGHTTHREAD_NETWORK_NAME);
+    dataset.setChannel(configuredChannel);
+    dataset.setPanId(configuredPanId);
+    dataset.setExtendedPanId(LIGHTTHREAD_EXTENDED_PAN_ID);
+    dataset.setNetworkKey(LIGHTTHREAD_NETWORK_KEY);
 
+    thread.commitDataSet(dataset);
 
-    setState(State::LEADER_WAIT_NETWORK);
+    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: Dataset committed");
+  }
+
+  thread.networkInterfaceUp();
+  thread.start();
+
+  logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: Thread started - waiting for attachment");
+
+  setState(State::LEADER_WAIT_NETWORK);
 }
 
-// Waits for the Thread network to come up and become a leader or router.
-// Once stable, binds the UDP socket and transitions to STANDBY.
 void LightThread::handleLeaderWaitNetwork() {
-    const LightThread::CliStep leaderWaitNetworkSteps[] = {
-            { "state",                                          "leader|router" },
-            { "udp open", "" },
-            { String("udp bind :: ") + LIGHTTHREAD_UDP_PORT,    "" },
-            { "ipaddr mleid",                                   "" }
-        };    
-
-    if(justEntered){
-        justEntered = false;
-        resetCliSteps();
-    }
-
-    if(timeInState() > LIGHTTHREAD_LEADER_TIMEOUT_MS) {
-        logLightThread(LIGHTTHREAD_LOG_ERROR,
-                       "LEADER_WAIT_NETWORK: Timed out waiting for leader state");
-        setState(State::ERROR);
-        return;
-    }
-
-    if(!runCliSteps(leaderWaitNetworkSteps, 4)) {
-        return;
-    }
-
-    captureMyIpFromResponse(getCliResponse());
-
-    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_WAIT_NETWORK: UDP ready");
-    setState(State::STANDBY);
- 
-}
-
-// Begins the commissioner role and adds a wildcard joiner filter.
-void LightThread::handleCommissionerStart() {
-    const LightThread::CliStep leaderCommissionerStartCommands[] = {
-            {"commissioner start",                                        ""}
-        };
-
-    if(justEntered) {
-        justEntered = false;
-        resetCliSteps();
-    }
-
-    if(!runCliSteps(leaderCommissionerStartCommands, 1)) {
-        return;
-    }
+  if(justEntered){
+    justEntered = false;
     
-    setState(State::COMMISSIONER_ACTIVE);
-}
+    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_WAIT_NETWORK - waiting for Thread role");
+  }
 
-// Sends pairing broadcasts periodically while in commissioner active mode.
-// Transitions to STANDBY after 60 seconds.
-void LightThread::handleCommissionerActive() {
-    static unsigned long lastBroadcast = 0;
+  ot_device_role_t threadRole = thread.otGetDeviceRole();
 
-    // Broadcast PAIRING signal
-    if(millis() - lastBroadcast > LIGHTTHREAD_LEADER_BROADCAST_INTERVAL_MS) {
-        lastBroadcast = millis();
+  if(threadRole >= OT_ROLE_CHILD){
+    refreshMyIp();
 
-        std::vector<uint8_t> emptyPayload;
-        bool ok = sendUdpPacket(MessageType::PAIRING_BROADCAST, emptyPayload,
-                                LIGHTTHREAD_MULTICAST_ALL_NODES, // multicast all nodes
-                                LIGHTTHREAD_UDP_PORT);
-
-        if(ok) {
-            logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_ACTIVE: Sent PAIR_REQUEST broadcast");
-        } else {
-            logLightThread(LIGHTTHREAD_LOG_WARN, "COMMISSIONER_ACTIVE: Failed to send PAIR_REQUEST");
-        }
+    if(!openUdp()){
+      setState(State::ERROR);
+      return;
     }
 
-    // End commissioning after 60 seconds
-    if(timeInState() > LIGHTTHREAD_LEADER_TIMEOUT_MS) {
-        logLightThread(LIGHTTHREAD_LOG_INFO,
-                   "COMMISSIONER_ACTIVE: Pairing timed out. Stopping commissioner");
+    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_WAIT_NETWORK - attached as %s", thread.otGetStringDeviceRole());
+
+    setState(State::STANDBY);
+    return;
+  }
+
+  if(timeInState() > LIGHTTHREAD_LEADER_TIMEOUT_MS){
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "LEADER_WAIT_NETWORK: Attachment timed out; role=%s", thread.otGetStringDeviceRole());
+
+    setState(State::ERROR);
+  }
+}
+
+void LightThread::handleCommissionerStart() {
+  if(!justEntered){
+    return;
+  }
+  justEntered = false;
+
+  if(!isThreadAttached()){
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISSIONER_START - Thread is not attached");
+    setState(State::ERROR);
+    return;  
+  }
+
+  logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_START - Petitioning for Commissioner role");
+
+  otError error = thread.startCommissioner(LIGHTTHREAD_COMMISSIONER_START_TIMEOUT_MS);
+
+  if(error != OT_ERROR_NONE){
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISIONER START - Petition failed: %s (%d)", otThreadErrorToString(error), static_cast<int>(error));
+
+  setState(State::STANDBY);
+  return;
+  }
+
+  logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_START - Commissioner active");
+
+  error = thread.addJoiner(LIGHTTHREAD_JOINER_PSKD, LIGHTTHREAD_JOINER_WINDOW_SECONDS);
+
+  if(error != OT_ERROR_NONE){
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISIONER_START - Could not authorize Joiner: %s (%d)", otThreadErrorToString(error), static_cast<int>(error));
+
+    thread.stopCommissioner();
+    setState(State::STANDBY);
+    return;
+  }
+
+  logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_START: Joiner window open for %lu seconds", static_cast<unsigned long>(LIGHTTHREAD_JOINER_WINDOW_SECONDS));
+
+  setState(State::COMMISSIONER_ACTIVE);
+
+}
+
+void LightThread::handleCommissionerActive() {
+  static unsigned long lastBroadcast = 0;
+
+  if(justEntered){
+    justEntered = false;
+
+    lastBroadcast = 0;
+
+    logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_ACTIVE - Waiting for joiner");
+  }
+
+  if(thread.getCommissionerState() != OT_COMMISSIONER_STATE_ACTIVE){
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISSIONER_ACTIVE - Commissioner is no longer active");
+
+    setState(State::COMMISSIONER_STOPPING);
+    return;
+  }
+
+  //send back pairing message
+
+  if(lastBroadcast == 0 || millis() - lastBroadcast >= LIGHTTHREAD_LEADER_BROADCAST_INTERVAL_MS) {
+
+    IPAddress multicastAddress;
+
+    if(!multicastAddress.fromString("ff03::1")) {
+        logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISSIONER_ACTIVE: Invalid multicast address");
+
         setState(State::COMMISSIONER_STOPPING);
         return;
     }
-}
 
-void LightThread::handleCommissionerStopping(){
+    std::vector<uint8_t> emptyPayload;
 
-    const LightThread::CliStep leaderCommissionerStopCommands[] = {
-                {"commissioner stop",                                        ""}
-        };
-    if(justEntered){
-        justEntered = false;
-        resetCliSteps();
-
-        logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_STOPPING: stopping commissioner...");
-        
+    if(sendUdpPacket(
+        MessageType::PAIRING_BROADCAST,
+        emptyPayload,
+        multicastAddress,
+        LIGHTTHREAD_UDP_PORT
+    )) {
+        logLightThread(
+            LIGHTTHREAD_LOG_VERBOSE,
+            "COMMISSIONER_ACTIVE: Pairing broadcast sent"
+        );
     }
 
-    if(!runCliSteps(leaderCommissionerStopCommands, 1)) {
-        return;
-    }
+    lastBroadcast = millis();
+  }
 
-    setState(State::STANDBY);
+  if(timeInState() >=LIGHTTHREAD_JOINER_WINDOW_SECONDS * 1000UL) {
+
+    logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_ACTIVE: Joiner window expired");
+
+    setState(State::COMMISSIONER_STOPPING);
+  }
 }
-            
+
+void LightThread::handleCommissionerStopping() {
+  if(!justEntered) {
+    return;
+  }
+
+  justEntered = false;
+
+  logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_STOPPING: Stopping Commissioner");
+
+  thread.stopCommissioner();
+
+  setState(State::STANDBY);
+}

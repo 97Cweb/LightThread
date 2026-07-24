@@ -1,163 +1,214 @@
 #include "LightThread.h"
 
-// Constructor: sets initial state and configures button pin
-LightThread::LightThread() : buttonPin(LIGHTTHREAD_DEFAULT_BUTTON_PIN), state(State::INIT) {
-    pinMode(LIGHTTHREAD_DEFAULT_BUTTON_PIN, INPUT_PULLUP);
+LightThread::LightThread() {
+    pinMode(buttonPin, INPUT_PULLUP);
 }
 
-// Begin routine: initializes CLI, resets state machine
 void LightThread::begin() {
-    logLightThread(LIGHTTHREAD_LOG_INFO, "LightThread begin()");
-    OThread.begin(false);    // Start CLI interface (non-blocking)
-    OThreadCLI.begin();
-    OThreadCLI.setTimeout(LIGHTTHREAD_CLI_SERIAL_TIMEOUT_MS); // Set CLI read timeout
-    setState(State::INIT);      // Enter INIT state
+    logLightThread(
+        LIGHTTHREAD_LOG_INFO,
+        "LightThread native OpenThread begin()"
+    );
+
+    thread.begin(false);
+    setState(State::INIT);
 }
 
-// Main loop update: handles input and state transitions
 void LightThread::update() {
-    handleButton(); // Check for button presses
-
-    readCliSerial();
-    processState(); // Call the handler for current state
-    updateCliCommand();
-    updateLighting();    // Update RGB LED
+    handleButton();
+    receiveUdpPackets();
+    processState();
+    updateLighting();
 }
 
-// Sets the current FSM state and resets its entry timer
 void LightThread::setState(State newState) {
-    if(state != newState) {
-        logLightThread(LIGHTTHREAD_LOG_INFO, "State transition: %d → %d", static_cast<int>(state),
-                       static_cast<int>(newState));
-        state = newState;
-        stateEntryTime = millis();
-        justEntered = true; // <- Set on entry
+    if(state == newState) {
+        return;
     }
+
+    logLightThread(
+        LIGHTTHREAD_LOG_INFO,
+        "State transition: %d -> %d",
+        static_cast<int>(state),
+        static_cast<int>(newState)
+    );
+
+    state = newState;
+    stateEntryTime = millis();
+    justEntered = true;
+    updateLighting();
 }
 
-// Checks if currently in a specific FSM state
-bool LightThread::inState(State expected) const { return state == expected; }
+bool LightThread::inState(State expected) const {
+    return state == expected;
+}
 
-// Returns how long the current state has been active
-unsigned long LightThread::timeInState() const { return millis() - stateEntryTime; }
+unsigned long LightThread::timeInState() const {
+    return millis() - stateEntryTime;
+}
 
-// Dispatches the appropriate handler for the current state
+bool LightThread::isThreadAttached() const {
+    ot_device_role_t threadRole = thread.otGetDeviceRole();
+
+    return threadRole == OT_ROLE_CHILD ||
+           threadRole == OT_ROLE_ROUTER ||
+           threadRole == OT_ROLE_LEADER;
+}
+
+void LightThread::refreshMyIp() {
+    if(!isThreadAttached()) {
+        myIp = IPAddress();
+        return;
+    }
+
+    myIp = thread.getMeshLocalEid();
+
+    logLightThread(
+        LIGHTTHREAD_LOG_INFO,
+        "MLEID: %s",
+        myIp.toString().c_str()
+    );
+}
+
+bool LightThread::openUdp() {
+    if(udpOpen) {
+        return true;
+    }
+
+    udpOpen = udp.begin(LIGHTTHREAD_UDP_PORT);
+
+    if(!udpOpen) {
+        logLightThread(
+            LIGHTTHREAD_LOG_ERROR,
+            "Could not bind UDP port %u",
+            LIGHTTHREAD_UDP_PORT
+        );
+
+        return false;
+    }
+
+    logLightThread(
+        LIGHTTHREAD_LOG_INFO,
+        "UDP bound on port %u",
+        LIGHTTHREAD_UDP_PORT
+    );
+
+    return true;
+}
+
+void LightThread::closeUdp() {
+    if(!udpOpen) {
+        return;
+    }
+
+    udp.stop();
+    udpOpen = false;
+}
+
 void LightThread::processState() {
     switch(state) {
-    case State::INIT:
-        handleInit();
-        break;
-    case State::STANDBY:
-        handleStandby();
-        break;
-    case State::LEADER_INIT:
-        handleLeaderInit();
-        break;
-    case State::LEADER_WAIT_NETWORK:
-        handleLeaderWaitNetwork();
-        break;
-    case State::COMMISSIONER_START:
-        handleCommissionerStart();
-        break;
-    case State::COMMISSIONER_ACTIVE:
-        handleCommissionerActive();
-        break;
-    case State::COMMISSIONER_STOPPING:
-        handleCommissionerStopping();
-        break;
-    case State::JOINER_START:
-        handleJoinerStart();
-        break;
-    case State::JOINER_SCAN:
-        handleJoinerScan();
-        break;
-    case State::JOINER_WAIT_BROADCAST:
-        handleJoinerWaitBroadcast();
-        break;
-    case State::JOINER_WAIT_RESPONSE:
-        handleJoinerWaitAck();
-        break;
-    case State::JOINER_PAIRED:
-        handleJoinerPaired();
-        break;
-    case State::JOINER_RECONNECT:
-        handleJoinerReconnect();
-        break;
-    case State::JOINER_SEEKING_LEADER:
-        handleJoinerSeekingLeader();
-        break;
-    case State::JOINER_FACTORY_RESET:
-        handleJoinerFactoryReset();
-        break;
+        case State::INIT:
+            handleInit();
+            break;
 
-    case State::ERROR:
-        handleError();
-        break;
-    default:
-        logLightThread(LIGHTTHREAD_LOG_WARN, "Unknown state");
-        break;
+        case State::STANDBY:
+            handleStandby();
+            break;
+
+        case State::LEADER_INIT:
+            handleLeaderInit();
+            break;
+
+        case State::LEADER_WAIT_NETWORK:
+            handleLeaderWaitNetwork();
+            break;
+
+        case State::COMMISSIONER_START:
+            handleCommissionerStart();
+            break;
+
+        case State::COMMISSIONER_ACTIVE:
+            handleCommissionerActive();
+            break;
+
+        case State::COMMISSIONER_STOPPING:
+            handleCommissionerStopping();
+            break;
+
+        case State::JOINER_START:
+            handleJoinerStart();
+            break;
+
+        case State::JOINER_WAIT_NETWORK:
+            handleJoinerWaitNetwork();
+            break;
+
+        case State::JOINER_DISCOVER_LEADER:
+            handleJoinerDiscoverLeader();
+            break;
+
+        case State::JOINER_PAIRED:
+            handleJoinerPaired();
+            break;
+
+        case State::JOINER_RECONNECT:
+            handleJoinerReconnect();
+            break;
+
+        case State::JOINER_FACTORY_RESET:
+            handleJoinerFactoryReset();
+            break;
+
+        case State::ERROR:
+            handleError();
+            break;
     }
 }
 
-// Initial state: load config, setup network, choose FSM path
 void LightThread::handleInit() {
-    static int leaderInitStep = 0;
-    if(justEntered) {
-        justEntered = false;
-        leaderInitStep = 0;
-
-        if(!loadNetworkConfig()) {
-            setState(State::ERROR);
-            return;
-        }
-
-        String tmp;
-
-        if(role != Role::LEADER){
-            if(loadLeaderInfo(leaderIp, tmp)) {
-                logLightThread(LIGHTTHREAD_LOG_INFO, "INIT: Joiner has saved leader info: %s",
-                               leaderIp.c_str());
-                setState(State::JOINER_RECONNECT);
-            }
-            else {
-                logLightThread(LIGHTTHREAD_LOG_INFO, "INIT: No saved leader info, standby");
-                setState(State::STANDBY);
-            }
-            return;
-        }
-        else{
-            logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER detected. Bootstrapping network setup...");
-            setState(State::LEADER_INIT);
-        }
+    if(!justEntered) {
+        return;
     }
+
+    justEntered = false;
+
+    if(!loadNetworkConfig()) {
+        setState(State::ERROR);
+        return;
+    }
+
+    if(role == Role::LEADER) {
+        setState(State::LEADER_INIT);
+        return;
+    }
+
+    if(thread.hasActiveDataset()) {
+        logLightThread(
+            LIGHTTHREAD_LOG_INFO,
+            "Stored Thread dataset found"
+        );
+
+        setState(State::JOINER_RECONNECT);
+        return;
+    }
+
+    logLightThread(
+        LIGHTTHREAD_LOG_INFO,
+        "Joiner has no stored Thread dataset"
+    );
+
+    setState(State::STANDBY);
 }
 
-// Leader standby: monitor joiner heartbeats and remove stale entries
 void LightThread::handleStandby() {
-    if(role != Role::LEADER)
-        return;
 
-    static unsigned long lastCheck = 0;
-    if(millis() - lastCheck < LIGHTTHREAD_CLI_STATE_CHECK_INTERVAL_MS)
-        return;
-    lastCheck = millis();
-
-    unsigned long now = millis();
-    for(auto it = joinerHeartbeatMap.begin(); it != joinerHeartbeatMap.end();) {
-        if(now - it->second > LIGHTTHREAD_HEARTBEAT_TIMEOUT_MS) {
-            logLightThread(LIGHTTHREAD_LOG_WARN, "Joiner %s timed out — removing from heartbeat map",
-                           it->first.c_str());
-            it = joinerHeartbeatMap.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    //leader normal ready state
 }
 
-// Placeholder error handler (can be expanded)
-void LightThread::handleError() {}
+void LightThread::handleError() {
+    // Deliberately empty for now.
+}
 
-// Reads the button and responds to short/long presses
 void LightThread::handleButton() {
     static bool buttonPressed = false;
     static unsigned long pressStart = 0;
@@ -167,30 +218,36 @@ void LightThread::handleButton() {
     if(isPressed && !buttonPressed) {
         buttonPressed = true;
         pressStart = millis();
-        logLightThread(LIGHTTHREAD_LOG_INFO, "Button press started");
 
-    } else if(!isPressed && buttonPressed) {
-        buttonPressed = false;
-        unsigned long duration = millis() - pressStart;
+        return;
+    }
 
-        if(duration < LIGHTTHREAD_BUTTON_DEBOUNCE_MS) {
-            logLightThread(LIGHTTHREAD_LOG_INFO, "Ignored press (debounce)");
-            return;
+    if(isPressed || !buttonPressed) {
+        return;
+    }
+
+    buttonPressed = false;
+
+    unsigned long duration = millis() - pressStart;
+
+    if(duration < LIGHTTHREAD_BUTTON_DEBOUNCE_MS) {
+        return;
+    }
+
+    if(duration >= LIGHTTHREAD_BUTTON_LONG_PRESS_MS) {
+        if(role == Role::JOINER) {
+            setState(State::JOINER_FACTORY_RESET);
         }
 
-        if(duration >= LIGHTTHREAD_BUTTON_LONG_PRESS_MS) {
-            // Long press = factory reset (for joiners only)
-            logLightThread(LIGHTTHREAD_LOG_INFO, "Long press");
-            if(role == Role::JOINER) {
-                setState(State::JOINER_FACTORY_RESET);
-            }
-        } else {
-            // Short press = trigger pairing
-            logLightThread(LIGHTTHREAD_LOG_INFO, "Short press");
-            if(state == State::STANDBY) {
-                setState(role == Role::LEADER ? State::COMMISSIONER_START : State::JOINER_START);
-            }
-        }
+        return;
+    }
+
+    if(state == State::STANDBY) {
+        setState(
+            role == Role::LEADER
+                ? State::COMMISSIONER_START
+                : State::JOINER_START
+        );
     }
 }
 
@@ -217,7 +274,11 @@ void LightThread::updateLighting() {
     };
 
     auto blink = [&](int r, int g, int b) {
-        if(millis() - lastBlink > LIGHTTHREAD_LED_BLINK_INTERVAL_MS) {
+        if(justEntered){
+            ledOn = true;
+            lastBlink = millis();
+        }
+        else if(millis() - lastBlink > LIGHTTHREAD_LED_BLINK_INTERVAL_MS) {
             ledOn = !ledOn;
             lastBlink = millis();
         }
@@ -247,24 +308,18 @@ void LightThread::updateLighting() {
     case State::JOINER_START:
         blink(0, 255, 255);
         break; // cyan
-    case State::JOINER_SCAN:
+    case State::JOINER_WAIT_NETWORK:
         blink(135, 206, 250);
         break; // light sky blue
-    case State::JOINER_WAIT_BROADCAST:
+    case State::JOINER_DISCOVER_LEADER:
         blink(0, 128, 255);
         break; // bluish green
-    case State::JOINER_WAIT_RESPONSE:
-        blink(0, 128, 255);
-        break;
     case State::JOINER_PAIRED:
         set(0, 255, 0);
         break; // solid green
     case State::JOINER_RECONNECT:
         blink(255, 255, 0);
         break; // blinking yellow
-    case State::JOINER_SEEKING_LEADER:
-        blink(255, 60, 0);
-        break; // blinking orange
 
     case State::ERROR:
         blink(255, 0, 0);

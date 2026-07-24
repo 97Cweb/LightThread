@@ -1,61 +1,72 @@
 #include "LightThread.h"
-#include <FS.h>
-#include <SD.h>
 
-// Handles incoming UDP message of type NORMAL.
-// It calls the registered UDP callback.
-void LightThread::handleNormalUdpMessage(const String &srcIp,
-                                         const std::vector<uint8_t> &payload) {
-    if (payload.empty()) return;
-    if (udpCallback) {
-        udpCallback(srcIp, payload);
-    } else {
-        logLightThread(LIGHTTHREAD_LOG_WARN, "ExposedUDP: No handler registered for NORMAL packets");
+void LightThread::handleNormalUdpMessage(
+    const String &srcIp,
+    const std::vector<uint8_t> &payload
+) {
+    if(payload.empty()) {
+        return;
     }
+
+    if(!udpCallback) {
+        logLightThread(
+            LIGHTTHREAD_LOG_WARN,
+            "No NORMAL UDP callback registered"
+        );
+
+        return;
+    }
+
+    udpCallback(srcIp, payload);
 }
 
-
-// Registers a callback to receive parsed incoming UDP payloads (after stripping headers).
 void LightThread::registerUdpReceiveCallback(
-    std::function<void(const String &, const std::vector<uint8_t> &)> fn) {
+    std::function<void(
+        const String &,
+        const std::vector<uint8_t> &
+    )> fn
+) {
     udpCallback = fn;
-    logLightThread(LIGHTTHREAD_LOG_INFO, "ExposedUDP: UDP callback registered");
 }
 
-// Registers a callback that is triggered when a new joiner is detected.
-// Used in pairing flows.
 void LightThread::registerJoinCallback(
-    std::function<void(const String &ip, const String &hashmac)> cb) {
+    std::function<void(
+        const String &,
+        const String &
+    )> cb
+) {
     joinCallback = cb;
-    logLightThread(LIGHTTHREAD_LOG_INFO, "Join callback registered");
 }
 
-// Sends a UDP packet to the destination IP.
-bool LightThread::sendUdp(const String &destIp, const std::vector<uint8_t> &userPayload) {
-    return sendUdpPacket(MessageType::NORMAL, userPayload, destIp, LIGHTTHREAD_UDP_PORT);
-}
+bool LightThread::sendUdp(
+    const String &destIp,
+    const std::vector<uint8_t> &payload
+) {
+    IPAddress address;
 
-// Returns the last time (in millis) a heartbeat was received from the given IP.
-// Used to detect lost joiners.
-unsigned long LightThread::getLastEchoTime(const String &ip) {
-    if(joinerHeartbeatMap.count(ip)) {
-        return joinerHeartbeatMap[ip];
+    if(!address.fromString(destIp)) {
+        logLightThread(
+            LIGHTTHREAD_LOG_WARN,
+            "Invalid destination IP: %s",
+            destIp.c_str()
+        );
+
+        return false;
     }
-    return 0; // never heard from, return 0
+
+    return sendUdpPacket(
+        MessageType::NORMAL,
+        payload,
+        address,
+        LIGHTTHREAD_UDP_PORT
+    );
 }
 
-// Returns true if the system is in a ready state (based on role and state).
-//   - Leader must be in STANDBY
-//   - Joiner must be fully PAIRED
+
 bool LightThread::isReady() const {
-    if(role == Role::LEADER)
+    if(role == Role::LEADER) {
         return state == State::STANDBY;
-    if(role == Role::JOINER)
-        return state == State::JOINER_PAIRED;
-    return false;
-}
+    }
 
-String LightThread::getMyIp() {
-    return myIp;
+    return state == State::JOINER_PAIRED;
 }
-
