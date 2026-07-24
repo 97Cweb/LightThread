@@ -36,6 +36,7 @@ void LightThread::setState(State newState) {
     state = newState;
     stateEntryTime = millis();
     justEntered = true;
+    updateLighting();
 }
 
 bool LightThread::inState(State expected) const {
@@ -273,7 +274,11 @@ void LightThread::updateLighting() {
     };
 
     auto blink = [&](int r, int g, int b) {
-        if(millis() - lastBlink > LIGHTTHREAD_LED_BLINK_INTERVAL_MS) {
+        if(justEntered){
+            ledOn = true;
+            lastBlink = millis();
+        }
+        else if(millis() - lastBlink > LIGHTTHREAD_LED_BLINK_INTERVAL_MS) {
             ledOn = !ledOn;
             lastBlink = millis();
         }

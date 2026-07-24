@@ -1,5 +1,8 @@
 #include "LightThread.h"
 
+#include <openthread/instance.h>
+#include <esp_openthread_lock.h>
+
 void LightThread::handleJoinerStart() {
   if(!justEntered){
     return;  
@@ -202,5 +205,40 @@ void LightThread::handleJoinerReconnect() {
 }
 
 void LightThread::handleJoinerFactoryReset() {
+  if(!justEntered){
+    return;
+  }
+  justEntered = false;
+  
+  logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_FACTORY_RESET - Erasing Thread credentials");
+
+  closeUdp();
+  clearPersistentState();
+  thread.stop();
+  thread.networkInterfaceDown();
+
+  otInstance *instance = thread.getInstance();
+
+  if(instance == nullptr){
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_FACTORY_RESET - OpenThread instance unavailable");
+
     setState(State::ERROR);
+    return;
+  }
+
+  if(!esp_openthread_lock_acquire(pdMS_TO_TICKS(1000))){
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_FACTORY_RESET - Could not aquire OpenThread lock");
+
+    setState(State::ERROR);
+    return;
+  }
+  
+  logLightThread(LIGHTTHREAD_LOG_WARN, "JOINER_FACTORY_RESET - Factory reset now");
+
+  otInstanceFactoryReset(instance);
+
+  esp_openthread_lock_release();
+  
+  logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_FACTORY_RESET - Platform restart did not occur");
+  setState(State::ERROR);
 }
