@@ -158,21 +158,6 @@ void LightThread::handleUdpPacket(
         static_cast<unsigned>(payload.size())
     );
 
-    if(msg == MessageType::PAIRING_BROADCAST &&
-       inState(State::JOINER_DISCOVER_LEADER)) {
-
-        std::vector<uint8_t> idBytes =
-            hashToBytes(generateMacHash());
-
-        sendUdpPacket(
-            MessageType::PAIRING_REQUEST,
-            idBytes,
-            srcIp,
-            LIGHTTHREAD_UDP_PORT
-        );
-
-        return;
-    }
 
     if(msg == MessageType::PAIRING_RESPONSE &&
        inState(State::JOINER_DISCOVER_LEADER)) {

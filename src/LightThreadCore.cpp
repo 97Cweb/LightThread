@@ -1,4 +1,11 @@
+#include <cstdint>
+#include <esp_sleep.h>
+#include "HardwareSerial.h"
 #include "LightThread.h"
+#include "LightThreadConfig.h"
+#include <SD.h>
+#include "esp32-hal-rgb-led.h"
+#include "pins_arduino.h"
 
 LightThread::LightThread() {
     pinMode(buttonPin, INPUT_PULLUP);
@@ -141,6 +148,10 @@ void LightThread::processState() {
 
         case State::JOINER_WAIT_NETWORK:
             handleJoinerWaitNetwork();
+            break;
+
+        case State::JOINER_APPLY_POWER_MODE:
+            handleJoinerApplyPowerMode();
             break;
 
         case State::JOINER_DISCOVER_LEADER:
@@ -329,4 +340,51 @@ void LightThread::updateLighting() {
         break; // magenta (unknown)
     }
 #endif
+}
+
+bool LightThread::goDormant(){
+    if(role != Role::JOINER){
+        logLightThread(LIGHTTHREAD_LOG_WARN, "goDormant() is only for joiners");
+        return false;
+    }
+    if(configuredPowerMode != PowerMode::DORMANT){
+        logLightThread(LIGHTTHREAD_LOG_WARN, "goDormant() ignored because power mode is not dormant");
+        return false;
+    }
+
+    if(configuredDormantWakeSeconds == 0){
+        logLightThread(LIGHTTHREAD_LOG_ERROR, "Cannot enter dormant mode with a 0 wake interval");
+        return false;
+    }
+    logLightThread(LIGHTTHREAD_LOG_INFO, "Entering dormant mode for %lu seconds", static_cast<unsigned long>(configuredDormantWakeSeconds));
+
+#ifdef RGB_BUILTIN
+    rgbLedWrite(RGB_BUILTIN, 0, 0, 0);
+#endif
+
+    delay(LIGHTTHREAD_DORMANT_TX_SETTLE_MS);
+
+    closeUdp();
+    thread.stop();
+    thread.networkInterfaceDown();
+
+    SD.end();
+
+    uint64_t sleepMicroseconds = static_cast<uint64_t>(configuredDormantWakeSeconds) * 1000000ULL;
+
+    esp_err_t wakeError = esp_sleep_enable_timer_wakeup(sleepMicroseconds);
+
+    if(wakeError != ESP_OK){
+        logLightThread(LIGHTTHREAD_LOG_ERROR, "Could not configure dormant wake timer: %d", static_cast<int>(wakeError));
+        thread.networkInterfaceUp();
+        thread.start();
+        return false;
+    }
+
+    Serial.flush();
+
+    esp_deep_sleep_start();
+
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "Deep sleep unexpectedly returned");
+    return false;
 }

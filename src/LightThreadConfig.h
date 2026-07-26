@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <openthread/dataset.h>
+#include "LightThreadTypes.h"
 
 // Hardware
 constexpr uint8_t LIGHTTHREAD_DEFAULT_BUTTON_PIN = 9;
@@ -37,6 +38,25 @@ constexpr uint8_t LIGHTTHREAD_EXTENDED_PAN_ID[OT_EXT_PAN_ID_SIZE] = {
     0x42, 0x65, 0x65, 0x74,
     0x6f, 0x6e, 0x00, 0x01
 };
+
+//sleepy and dormant
+constexpr PowerMode LIGHTTHREAD_DEFAULT_POWER_MODE = PowerMode::AWAKE;
+
+constexpr char LIGHTTHREAD_DEFAULT_POWER_MODE_TEXT[] =
+    "awake";
+
+constexpr uint32_t LIGHTTHREAD_DEFAULT_POLL_PERIOD_MS = 500;
+constexpr uint32_t LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC = 300;
+
+constexpr uint32_t LIGHTTHREAD_DEFAULT_DORMANT_WAKE_SECONDS = 900;
+
+/*
+ * Brief time for a UDP datagram handed to OpenThread to leave the
+ * application before Thread is shut down.
+ *
+ * This is not a reliable-message acknowledgement delay.
+ */
+constexpr uint32_t LIGHTTHREAD_DORMANT_TX_SETTLE_MS = 100;
 
 // Timing
 constexpr unsigned long LIGHTTHREAD_FAST_POLL_MS = 250;

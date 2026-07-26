@@ -6,52 +6,12 @@
 #include <OThreadUDP.h>
 
 #include "LightThreadConfig.h"
+#include "LightThreadTypes.h"
 
+#include <cstdint>
 #include <functional>
 #include <vector>
 
-enum class Role {
-    LEADER,
-    JOINER
-};
-
-enum class State {
-    INIT,
-    STANDBY,
-
-    // Leader path
-    LEADER_INIT,
-    LEADER_WAIT_NETWORK,
-    COMMISSIONER_START,
-    COMMISSIONER_ACTIVE,
-    COMMISSIONER_STOPPING,
-
-    // Joiner path
-    JOINER_START,
-    JOINER_WAIT_NETWORK,
-    JOINER_DISCOVER_LEADER,
-    JOINER_PAIRED,
-    JOINER_RECONNECT,
-    JOINER_FACTORY_RESET,
-
-    ERROR
-};
-
-enum class MessageType : uint8_t {
-    NORMAL             = 0x00,
-    PAIRING_BROADCAST  = 0x01,
-    PAIRING_REQUEST    = 0x02,
-    PAIRING_RESPONSE   = 0x03,
-    DISCOVERY_REQUEST  = 0x04,
-    DISCOVERY_RESPONSE = 0x05
-};
-
-enum LightThreadLogLevel {
-    LIGHTTHREAD_LOG_VERBOSE,
-    LIGHTTHREAD_LOG_INFO,
-    LIGHTTHREAD_LOG_WARN,
-    LIGHTTHREAD_LOG_ERROR
-};
 
 class LightThread {
 public:
@@ -73,6 +33,11 @@ public:
 
     String getLeaderIp() const {
         return leaderIp.toString();
+    }
+
+    bool goDormant();
+    PowerMode getPowerMode() const{
+        return configuredPowerMode;
     }
 
     void registerUdpReceiveCallback(
@@ -114,6 +79,14 @@ private:
 
   bool udpOpen = false;
 
+  PowerMode configuredPowerMode = PowerMode::AWAKE;
+
+  uint32_t configuredPollPeriodMs = LIGHTTHREAD_DEFAULT_POLL_PERIOD_MS;
+  uint32_t configuredChildTimeoutSec = LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC;
+  uint32_t configuredDormantWakeSeconds = LIGHTTHREAD_DEFAULT_DORMANT_WAKE_SECONDS;
+
+  bool configureJoinerPowerMode();
+
   // Configuration loaded from SD
   uint8_t configuredChannel = LIGHTTHREAD_DEFAULT_CHANNEL;
   uint16_t configuredPanId = LIGHTTHREAD_DEFAULT_PANID;
@@ -154,6 +127,7 @@ private:
   // Joiner
   void handleJoinerStart();
   void handleJoinerWaitNetwork();
+  void handleJoinerApplyPowerMode();
   void handleJoinerDiscoverLeader();
   void handleJoinerPaired();
   void handleJoinerReconnect();
