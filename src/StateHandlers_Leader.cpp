@@ -106,14 +106,11 @@ void LightThread::handleCommissionerStart() {
 }
 
 void LightThread::handleCommissionerActive() {
-  static unsigned long lastBroadcast = 0;
-
   if(justEntered){
     justEntered = false;
 
-    lastBroadcast = 0;
 
-    logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_ACTIVE - Waiting for joiner");
+    logLightThread(LIGHTTHREAD_LOG_INFO, "COMMISSIONER_ACTIVE - Waiting for pairing request");
   }
 
   if(thread.getCommissionerState() != OT_COMMISSIONER_STATE_ACTIVE){
@@ -121,36 +118,6 @@ void LightThread::handleCommissionerActive() {
 
     setState(State::COMMISSIONER_STOPPING);
     return;
-  }
-
-  //send back pairing message
-
-  if(lastBroadcast == 0 || millis() - lastBroadcast >= LIGHTTHREAD_LEADER_BROADCAST_INTERVAL_MS) {
-
-    IPAddress multicastAddress;
-
-    if(!multicastAddress.fromString("ff03::1")) {
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISSIONER_ACTIVE: Invalid multicast address");
-
-        setState(State::COMMISSIONER_STOPPING);
-        return;
-    }
-
-    std::vector<uint8_t> emptyPayload;
-
-    if(sendUdpPacket(
-        MessageType::PAIRING_BROADCAST,
-        emptyPayload,
-        multicastAddress,
-        LIGHTTHREAD_UDP_PORT
-    )) {
-        logLightThread(
-            LIGHTTHREAD_LOG_VERBOSE,
-            "COMMISSIONER_ACTIVE: Pairing broadcast sent"
-        );
-    }
-
-    lastBroadcast = millis();
   }
 
   if(timeInState() >=LIGHTTHREAD_JOINER_WINDOW_SECONDS * 1000UL) {

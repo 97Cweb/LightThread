@@ -1,4 +1,5 @@
 #include "LightThread.h"
+#include "LightThreadConfig.h"
 
 #include <ArduinoJson.h>
 #include <FS.h>
@@ -123,13 +124,74 @@ bool LightThread::parseNetworkJson(
         doc["identity"]["led"] |
         LIGHTTHREAD_DEFAULT_LED;
 
+    JsonObject power = doc["power"];
+    const char *powerModeText = power["mode"] | LIGHTTHREAD_DEFAULT_POWER_MODE_TEXT;
+    String powerModeString(powerModeText);
+    powerModeString.toLowerCase();
+
+    if(powerModeString == "awake"){
+        configuredPowerMode = PowerMode::AWAKE;
+    }
+    else if(powerModeString == "sleepy"){
+        configuredPowerMode = PowerMode::SLEEPY;
+    }
+    else if(powerModeString == "dormant"){
+        configuredPowerMode = PowerMode::DORMANT;
+    }
+    else{
+        logLightThread(LIGHTTHREAD_LOG_ERROR, "Invalid power.mode: %s", powerModeString.c_str());
+        return false;
+    }
+
+    configuredPollPeriodMs = power["poll_ms"] | LIGHTTHREAD_DEFAULT_POLL_PERIOD_MS;
+
+    configuredChildTimeoutSec = power["child_timeout_seconds"] | LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC;
+
+    configuredDormantWakeSeconds = power["wake_seconds"] | LIGHTTHREAD_DEFAULT_DORMANT_WAKE_SECONDS;
+
+    if(configuredPollPeriodMs < 10){
+        logLightThread(LIGHTTHREAD_LOG_WARN, "power.poll_ms must be at least 10, using 10");
+        configuredPollPeriodMs = 10;
+    }
+
+    if(configuredChildTimeoutSec == 0){
+        logLightThread(LIGHTTHREAD_LOG_WARN, "power.child_timeout_seconds cannot be 0, using %lu",static_cast<unsigned long>(LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC));
+        configuredChildTimeoutSec = LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC;
+    }
+
+    if(configuredPowerMode == PowerMode::DORMANT && configuredDormantWakeSeconds == 0){
+        logLightThread(LIGHTTHREAD_LOG_ERROR, "Dormant mode requires power.wake_seconds greater than 0");
+        return false;
+    }
+
+    const char *configuredPowerModeText =
+        "awake";
+
+    switch(configuredPowerMode) {
+        case PowerMode::AWAKE:
+            configuredPowerModeText = "awake";
+            break;
+
+        case PowerMode::SLEEPY:
+            configuredPowerModeText = "sleepy";
+            break;
+
+        case PowerMode::DORMANT:
+            configuredPowerModeText = "dormant";
+            break;
+    }
+
     logLightThread(
         LIGHTTHREAD_LOG_INFO,
-        "Config role=%s channel=%u panid=0x%04x",
+        "Config role=%s channel=%u panid=0x%04x power_mode=%s",
         roleString.c_str(),
         configuredChannel,
-        configuredPanId
+        configuredPanId,
+        configuredPowerModeText
     );
+    if(configuredPowerMode == PowerMode::DORMANT){
+        logLightThread(LIGHTTHREAD_LOG_INFO, "Dormant wake interval=%lus",static_cast<unsigned long>(configuredDormantWakeSeconds));
+    }
 
     return true;
 }
@@ -161,6 +223,9 @@ void LightThread::createDefaultNetworkConfig() {
 
     network["panid"] =
         LIGHTTHREAD_DEFAULT_PANID;
+
+    JsonObject power = doc.createNestedObject("power");
+    power["mode"] = LIGHTTHREAD_DEFAULT_POWER_MODE_TEXT;
 
     SD.remove("/LightThread/network.json");
 
