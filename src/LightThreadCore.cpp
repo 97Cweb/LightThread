@@ -352,11 +352,11 @@ bool LightThread::goDormant(){
         return false;
     }
 
-    if(configuredDormantWakeSeconds == 0){
+    if(configuredDormantWakeAfterSeconds == 0){
         logLightThread(LIGHTTHREAD_LOG_ERROR, "Cannot enter dormant mode with a 0 wake interval");
         return false;
     }
-    logLightThread(LIGHTTHREAD_LOG_INFO, "Entering dormant mode for %lu seconds", static_cast<unsigned long>(configuredDormantWakeSeconds));
+    logLightThread(LIGHTTHREAD_LOG_INFO, "Entering dormant mode for %lu seconds", static_cast<unsigned long>(configuredDormantWakeAfterSeconds));
 
 #ifdef RGB_BUILTIN
     rgbLedWrite(RGB_BUILTIN, 0, 0, 0);
@@ -370,7 +370,7 @@ bool LightThread::goDormant(){
 
     SD.end();
 
-    uint64_t sleepMicroseconds = static_cast<uint64_t>(configuredDormantWakeSeconds) * 1000000ULL;
+    uint64_t sleepMicroseconds = static_cast<uint64_t>(configuredDormantWakeAfterSeconds) * 1000000ULL;
 
     esp_err_t wakeError = esp_sleep_enable_timer_wakeup(sleepMicroseconds);
 

@@ -45,10 +45,10 @@ constexpr PowerMode LIGHTTHREAD_DEFAULT_POWER_MODE = PowerMode::AWAKE;
 constexpr char LIGHTTHREAD_DEFAULT_POWER_MODE_TEXT[] =
     "awake";
 
-constexpr uint32_t LIGHTTHREAD_DEFAULT_POLL_PERIOD_MS = 500;
+constexpr uint32_t LIGHTTHREAD_DEFAULT_POLL_INTERVAL_MS = 500;
 constexpr uint32_t LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC = 300;
 
-constexpr uint32_t LIGHTTHREAD_DEFAULT_DORMANT_WAKE_SECONDS = 900;
+constexpr uint32_t LIGHTTHREAD_DEFAULT_DORMANT_WAKE_AFTER_SECONDS = 900;
 
 /*
  * Brief time for a UDP datagram handed to OpenThread to leave the
