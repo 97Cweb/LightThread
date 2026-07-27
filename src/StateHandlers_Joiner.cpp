@@ -404,7 +404,7 @@ bool LightThread::configureJoinerPowerMode(){
 
             case PowerMode::SLEEPY:
             case PowerMode::DORMANT:
-                pollError = otLinkSetPollPeriod(instance,configuredPollPeriodMs);
+                pollError = otLinkSetPollPeriod(instance,configuredPollIntervalMs);
 
                 otThreadSetChildTimeout(instance,configuredChildTimeoutSec);
                 break;
@@ -434,10 +434,10 @@ bool LightThread::configureJoinerPowerMode(){
             break;
 
         case PowerMode::SLEEPY:
-            logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER - Power mode sleepy, poll=%lums timeout %lus", static_cast<unsigned long>(configuredPollPeriodMs), static_cast<unsigned long>(configuredChildTimeoutSec));
+            logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER - Power mode sleepy, poll=%lums timeout %lus", static_cast<unsigned long>(configuredPollIntervalMs), static_cast<unsigned long>(configuredChildTimeoutSec));
             break;
         case PowerMode::DORMANT:
-            logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER - Power mode dormant, poll=%lums wake=%lus",static_cast<unsigned long>(configuredPollPeriodMs),static_cast<unsigned long>(configuredDormantWakeSeconds));
+            logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER - Power mode dormant, poll=%lums wake=%lus",static_cast<unsigned long>(configuredPollIntervalMs),static_cast<unsigned long>(configuredDormantWakeAfterSeconds));
             break;
     }
 

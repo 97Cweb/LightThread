@@ -143,15 +143,15 @@ bool LightThread::parseNetworkJson(
         return false;
     }
 
-    configuredPollPeriodMs = power["poll_ms"] | LIGHTTHREAD_DEFAULT_POLL_PERIOD_MS;
+    configuredPollIntervalMs = power["poll_interval_ms"] | LIGHTTHREAD_DEFAULT_POLL_INTERVAL_MS;
 
     configuredChildTimeoutSec = power["child_timeout_seconds"] | LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC;
 
-    configuredDormantWakeSeconds = power["wake_seconds"] | LIGHTTHREAD_DEFAULT_DORMANT_WAKE_SECONDS;
+    configuredDormantWakeAfterSeconds = power["wake_after_seconds"] | LIGHTTHREAD_DEFAULT_DORMANT_WAKE_AFTER_SECONDS;
 
-    if(configuredPollPeriodMs < 10){
-        logLightThread(LIGHTTHREAD_LOG_WARN, "power.poll_ms must be at least 10, using 10");
-        configuredPollPeriodMs = 10;
+    if(configuredPollIntervalMs < 10){
+        logLightThread(LIGHTTHREAD_LOG_WARN, "power.poll_interval_ms must be at least 10, using 10");
+        configuredPollIntervalMs = 10;
     }
 
     if(configuredChildTimeoutSec == 0){
@@ -159,8 +159,8 @@ bool LightThread::parseNetworkJson(
         configuredChildTimeoutSec = LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC;
     }
 
-    if(configuredPowerMode == PowerMode::DORMANT && configuredDormantWakeSeconds == 0){
-        logLightThread(LIGHTTHREAD_LOG_ERROR, "Dormant mode requires power.wake_seconds greater than 0");
+    if(configuredPowerMode == PowerMode::DORMANT && configuredDormantWakeAfterSeconds == 0){
+        logLightThread(LIGHTTHREAD_LOG_ERROR, "Dormant mode requires power.wake_after_seconds greater than 0");
         return false;
     }
 
@@ -190,7 +190,7 @@ bool LightThread::parseNetworkJson(
         configuredPowerModeText
     );
     if(configuredPowerMode == PowerMode::DORMANT){
-        logLightThread(LIGHTTHREAD_LOG_INFO, "Dormant wake interval=%lus",static_cast<unsigned long>(configuredDormantWakeSeconds));
+        logLightThread(LIGHTTHREAD_LOG_INFO, "Dormant wake interval=%lus",static_cast<unsigned long>(configuredDormantWakeAfterSeconds));
     }
 
     return true;

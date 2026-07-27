@@ -81,9 +81,9 @@ private:
 
   PowerMode configuredPowerMode = PowerMode::AWAKE;
 
-  uint32_t configuredPollPeriodMs = LIGHTTHREAD_DEFAULT_POLL_PERIOD_MS;
+  uint32_t configuredPollIntervalMs = LIGHTTHREAD_DEFAULT_POLL_INTERVAL_MS;
   uint32_t configuredChildTimeoutSec = LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC;
-  uint32_t configuredDormantWakeSeconds = LIGHTTHREAD_DEFAULT_DORMANT_WAKE_SECONDS;
+  uint32_t configuredDormantWakeAfterSeconds = LIGHTTHREAD_DEFAULT_DORMANT_WAKE_AFTER_SECONDS;
 
   bool configureJoinerPowerMode();
 
