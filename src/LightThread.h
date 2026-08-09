@@ -90,7 +90,6 @@ private:
   // Configuration loaded from SD
   uint8_t configuredChannel = LIGHTTHREAD_DEFAULT_CHANNEL;
   uint16_t configuredPanId = LIGHTTHREAD_DEFAULT_PANID;
-  String configuredPrefix = LIGHTTHREAD_DEFAULT_MESH_PREFIX;
   String configuredLED = LIGHTTHREAD_DEFAULT_LED;
 
 

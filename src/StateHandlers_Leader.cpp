@@ -1,4 +1,8 @@
 #include "LightThread.h"
+#include "LightThreadConfig.h"
+#include "LightThreadTypes.h"
+#include "openthread/dataset.h"
+#include <cstring>
 
 void LightThread::handleLeaderInit() {
   if(!justEntered){
@@ -6,32 +10,58 @@ void LightThread::handleLeaderInit() {
   }
   justEntered = false;
 
-  //if active dataset exists, reuse to allow reconnect easily
+  bool createDataset = !thread.hasActiveDataset();
+  
 
-  if(thread.hasActiveDataset()){
-    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: Active dataset found - resuming existing network");
-  }
-  else{
-    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: No active dataset - creating network");
+  if(!createDataset){
 
-    dataset.initNew();
-    dataset.setNetworkName(LIGHTTHREAD_NETWORK_NAME);
-    dataset.setChannel(configuredChannel);
-    dataset.setPanId(configuredPanId);
-    dataset.setExtendedPanId(LIGHTTHREAD_EXTENDED_PAN_ID);
-    dataset.setNetworkKey(LIGHTTHREAD_NETWORK_KEY);
+        DataSet activeDataset = thread.getCurrentDataSet();
+      bool matches = activeDataset.getChannel() == configuredChannel &&
+          activeDataset.getPanId() == configuredPanId &&
+          strcmp(
+                  activeDataset.getNetworkName(), 
+                  LIGHTTHREAD_NETWORK_NAME
+                ) == 0 &&
+          memcmp(
+                  activeDataset.getExtendedPanId(),
+                  LIGHTTHREAD_EXTENDED_PAN_ID, 
+                  OT_EXT_PAN_ID_SIZE
+                  ) == 0 &&
+          memcmp(activeDataset.getNetworkKey(),
+                  LIGHTTHREAD_NETWORK_KEY, 
+                  OT_NETWORK_KEY_SIZE
+                  ) == 0;
 
-    thread.commitDataSet(dataset);
+        if(matches){
+            logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: Stored dataset matches configuration - resuming existing network");
+        }
+        else{
+            logLightThread(LIGHTTHREAD_LOG_WARN, "LEADER_INIT: Stored dataset differs from configuration; replacing it");
+            createDataset = true;
+        }
 
-    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: Dataset committed");
-  }
+    }
+  
+    if(createDataset){
 
-  thread.networkInterfaceUp();
-  thread.start();
+        dataset.initNew();
+        dataset.setNetworkName(LIGHTTHREAD_NETWORK_NAME);
+        dataset.setChannel(configuredChannel);
+        dataset.setPanId(configuredPanId);
+        dataset.setExtendedPanId(LIGHTTHREAD_EXTENDED_PAN_ID);
+        dataset.setNetworkKey(LIGHTTHREAD_NETWORK_KEY);
 
-  logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: Thread started - waiting for attachment");
+        thread.commitDataSet(dataset);
 
-  setState(State::LEADER_WAIT_NETWORK);
+        logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: Dataset committed");
+    }
+
+    thread.networkInterfaceUp();
+    thread.start();
+
+    logLightThread(LIGHTTHREAD_LOG_INFO, "LEADER_INIT: Thread started - waiting for attachment");
+
+    setState(State::LEADER_WAIT_NETWORK);
 }
 
 void LightThread::handleLeaderWaitNetwork() {
@@ -81,7 +111,7 @@ void LightThread::handleCommissionerStart() {
   otError error = thread.startCommissioner(LIGHTTHREAD_COMMISSIONER_START_TIMEOUT_MS);
 
   if(error != OT_ERROR_NONE){
-    logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISIONER START - Petition failed: %s (%d)", otThreadErrorToString(error), static_cast<int>(error));
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISSIONER START - Petition failed: %s (%d)", otThreadErrorToString(error), static_cast<int>(error));
 
   setState(State::STANDBY);
   return;
@@ -92,7 +122,7 @@ void LightThread::handleCommissionerStart() {
   error = thread.addJoiner(LIGHTTHREAD_JOINER_PSKD, LIGHTTHREAD_JOINER_WINDOW_SECONDS);
 
   if(error != OT_ERROR_NONE){
-    logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISIONER_START - Could not authorize Joiner: %s (%d)", otThreadErrorToString(error), static_cast<int>(error));
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "COMMISSIONER_START - Could not authorize Joiner: %s (%d)", otThreadErrorToString(error), static_cast<int>(error));
 
     thread.stopCommissioner();
     setState(State::STANDBY);

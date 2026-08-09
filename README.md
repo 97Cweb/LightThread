@@ -14,3 +14,12 @@ Clone this repo into your Arduino `libraries` folder:
 
 ```bash
 git clone https://github.com/97Cweb/LightThread.git
+```
+
+## Notes
+
+Changing the leader's network info results in needing to manually reset the joiners by long pressing the button. 
+
+## Todo
+
+network hop through leader command
