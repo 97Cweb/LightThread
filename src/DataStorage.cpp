@@ -1,5 +1,6 @@
 #include "LightThread.h"
 #include "LightThreadConfig.h"
+#include "LightThreadTypes.h"
 
 #include <ArduinoJson.h>
 #include <FS.h>
@@ -21,7 +22,7 @@ bool LightThread::loadNetworkConfig() {
     if(!configFile) {
         logLightThread(
             LIGHTTHREAD_LOG_WARN,
-            "network.json missing; creating default"
+            "network.json missing; creating default. Edit it and restart the device"
         );
 
         createDefaultNetworkConfig();
@@ -116,13 +117,14 @@ bool LightThread::parseNetworkJson(
             LIGHTTHREAD_DEFAULT_PANID;
     }
 
-    configuredPrefix =
-        network["meshlocalprefix"] |
-        LIGHTTHREAD_DEFAULT_MESH_PREFIX;
+    const char* ledText = doc["identity"]["led"] | LIGHTTHREAD_DEFAULT_LED;
 
-    configuredLED =
-        doc["identity"]["led"] |
-        LIGHTTHREAD_DEFAULT_LED;
+    configuredLED = ledText;
+    configuredLED.toLowerCase();
+    if(configuredLED.length() !=3){
+        logLightThread(LIGHTTHREAD_LOG_WARN, "identity.led must contain exactly 3 characters, using %s instead",LIGHTTHREAD_DEFAULT_LED);
+        configuredLED = LIGHTTHREAD_DEFAULT_LED;
+    }
 
     JsonObject power = doc["power"];
     const char *powerModeText = power["mode"] | LIGHTTHREAD_DEFAULT_POWER_MODE_TEXT;
@@ -218,14 +220,20 @@ void LightThread::createDefaultNetworkConfig() {
     network["channel"] =
         LIGHTTHREAD_DEFAULT_CHANNEL;
 
-    network["meshlocalprefix"] =
-        LIGHTTHREAD_DEFAULT_MESH_PREFIX;
 
     network["panid"] =
         LIGHTTHREAD_DEFAULT_PANID;
 
     JsonObject power = doc.createNestedObject("power");
     power["mode"] = LIGHTTHREAD_DEFAULT_POWER_MODE_TEXT;
+    power["poll_interval_ms"] =
+        LIGHTTHREAD_DEFAULT_POLL_INTERVAL_MS;
+
+    power["child_timeout_seconds"] =
+        LIGHTTHREAD_DEFAULT_CHILD_TIMEOUT_SEC;
+
+    power["wake_after_seconds"] =
+        LIGHTTHREAD_DEFAULT_DORMANT_WAKE_AFTER_SECONDS;
 
     SD.remove("/LightThread/network.json");
 
@@ -248,8 +256,8 @@ void LightThread::createDefaultNetworkConfig() {
 }
 
 void LightThread::clearPersistentState() {
-    // For the moment, only application-side state.
-    // Native Thread dataset erasure is added later.
+    //clears application side state
+    //caller responsible for erasing thread dataset
     leaderIp = IPAddress();
     myIp = IPAddress();
 }

@@ -1,6 +1,5 @@
 #include "LightThread.h"
 #include "LightThreadTypes.h"
-#include "freertos/projdefs.h"
 #include "openthread/error.h"
 
 #include <openthread/instance.h>
@@ -8,8 +7,6 @@
 #include <openthread/thread.h>
 
 #include <esp_openthread_lock.h>
-#include <esp_sleep.h>
-#include <sys/unistd.h>
 
 void LightThread::handleJoinerStart() {
   if(!justEntered){
@@ -228,6 +225,7 @@ void LightThread::handleJoinerPaired() {
 }
 
 void LightThread::handleJoinerReconnect() {
+    static bool powerModeApplied = false;
     static unsigned long lastDiscoveryRequest = 0;
   
     if(justEntered){
@@ -235,6 +233,7 @@ void LightThread::handleJoinerReconnect() {
 
         leaderIp = IPAddress();
         lastDiscoveryRequest = 0;
+        powerModeApplied = false;
 
         logLightThread(LIGHTTHREAD_LOG_INFO, "JOINER_RECONNECT - Resuming stored Thread network");
 
@@ -262,12 +261,18 @@ void LightThread::handleJoinerReconnect() {
     return;
     }
 
-    if(!udpOpen){
-
+    if(!powerModeApplied){
         if(!configureJoinerPowerMode()){
             setState(State::ERROR);
             return;
         }
+        powerModeApplied = true;
+        if(!isThreadAttached()){
+            return;
+        }
+    }
+
+    if(!udpOpen){
         refreshMyIp();
         if(!openUdp()){
             setState(State::ERROR);
@@ -343,7 +348,7 @@ void LightThread::handleJoinerFactoryReset() {
   }
 
   if(!esp_openthread_lock_acquire(pdMS_TO_TICKS(1000))){
-    logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_FACTORY_RESET - Could not aquire OpenThread lock");
+    logLightThread(LIGHTTHREAD_LOG_ERROR, "JOINER_FACTORY_RESET - Could not acquire OpenThread lock");
 
     setState(State::ERROR);
     return;

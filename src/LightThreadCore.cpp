@@ -1,11 +1,9 @@
-#include <cstdint>
 #include <esp_sleep.h>
-#include "HardwareSerial.h"
 #include "LightThread.h"
 #include "LightThreadConfig.h"
 #include <SD.h>
+#include "LightThreadTypes.h"
 #include "esp32-hal-rgb-led.h"
-#include "pins_arduino.h"
 
 LightThread::LightThread() {
     pinMode(buttonPin, INPUT_PULLUP);
@@ -212,8 +210,10 @@ void LightThread::handleInit() {
 }
 
 void LightThread::handleStandby() {
-
-    //leader normal ready state
+    if(role == Role::LEADER && !isThreadAttached()){
+        closeUdp();
+        setState(State::LEADER_WAIT_NETWORK);
+    }
 }
 
 void LightThread::handleError() {
@@ -306,10 +306,12 @@ void LightThread::updateLighting() {
 
     case State::LEADER_INIT:
     case State::LEADER_WAIT_NETWORK:
+    case State::JOINER_FACTORY_RESET:
         blink(255, 165, 0);
         break; // orange blink
 
     case State::COMMISSIONER_START:
+    case State::COMMISSIONER_STOPPING:
         blink(255, 60, 0);
         break; // dark orange
     case State::COMMISSIONER_ACTIVE:
@@ -320,6 +322,7 @@ void LightThread::updateLighting() {
         blink(0, 255, 255);
         break; // cyan
     case State::JOINER_WAIT_NETWORK:
+    case State::JOINER_APPLY_POWER_MODE:
         blink(135, 206, 250);
         break; // light sky blue
     case State::JOINER_DISCOVER_LEADER:
@@ -343,8 +346,8 @@ void LightThread::updateLighting() {
 }
 
 bool LightThread::goDormant(){
-    if(role != Role::JOINER){
-        logLightThread(LIGHTTHREAD_LOG_WARN, "goDormant() is only for joiners");
+    if(role != Role::JOINER || state != State::JOINER_PAIRED || !isThreadAttached()){
+        logLightThread(LIGHTTHREAD_LOG_WARN, "goDormant() is only for paired attached joiners");
         return false;
     }
     if(configuredPowerMode != PowerMode::DORMANT){

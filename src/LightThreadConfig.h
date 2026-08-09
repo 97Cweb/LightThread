@@ -10,12 +10,6 @@ constexpr uint8_t LIGHTTHREAD_DEFAULT_BUTTON_PIN = 9;
 // Application UDP
 constexpr uint16_t LIGHTTHREAD_UDP_PORT = 12345;
 
-constexpr uint8_t LIGHTTHREAD_MULTICAST_ALL_NODES_BYTES[16] = {
-    0xff, 0x03, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x01
-};
 
 // Thread network
 constexpr char LIGHTTHREAD_NETWORK_NAME[] = "Beeton";
@@ -24,7 +18,6 @@ constexpr char LIGHTTHREAD_JOINER_PSKD[] = "J01NME";
 constexpr uint8_t LIGHTTHREAD_DEFAULT_CHANNEL = 11;
 constexpr uint16_t LIGHTTHREAD_DEFAULT_PANID = 0x1234;
 
-constexpr char LIGHTTHREAD_DEFAULT_MESH_PREFIX[] = "fd00::";
 constexpr char LIGHTTHREAD_DEFAULT_LED[] = "rgb";
 
 constexpr uint8_t LIGHTTHREAD_NETWORK_KEY[OT_NETWORK_KEY_SIZE] = {
@@ -39,8 +32,7 @@ constexpr uint8_t LIGHTTHREAD_EXTENDED_PAN_ID[OT_EXT_PAN_ID_SIZE] = {
     0x6f, 0x6e, 0x00, 0x01
 };
 
-//sleepy and dormant
-constexpr PowerMode LIGHTTHREAD_DEFAULT_POWER_MODE = PowerMode::AWAKE;
+
 
 constexpr char LIGHTTHREAD_DEFAULT_POWER_MODE_TEXT[] =
     "awake";
@@ -58,10 +50,6 @@ constexpr uint32_t LIGHTTHREAD_DEFAULT_DORMANT_WAKE_AFTER_SECONDS = 900;
  */
 constexpr uint32_t LIGHTTHREAD_DORMANT_TX_SETTLE_MS = 100;
 
-// Timing
-constexpr unsigned long LIGHTTHREAD_FAST_POLL_MS = 250;
-constexpr unsigned long LIGHTTHREAD_NORMAL_POLL_MS = 1000;
-constexpr unsigned long LIGHTTHREAD_SLOW_POLL_MS = 3000;
 
 constexpr unsigned long LIGHTTHREAD_BUTTON_DEBOUNCE_MS = 50;
 constexpr unsigned long LIGHTTHREAD_BUTTON_LONG_PRESS_MS = 3000;
